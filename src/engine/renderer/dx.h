@@ -1,21 +1,31 @@
 #pragma once
 
-//
-// DirectX 12 backend implementation is provided mostly for educational purposes and is not included in the prebuild binaries.
-// It can be enabled by uncommenting the following line.
-//
-//#define ENABLE_DX12
+// Uncomment the following line to enable DX12 backend
+#define ENABLE_DX12
+
+#include <vector>
+
 
 struct ID3D12CommandAllocator;
-struct ID3D12GraphicsCommandList;
+struct ID3D12GraphicsCommandList4;
 struct ID3D12CommandQueue;
-struct ID3D12Device;
+struct ID3D12Device5;
 struct ID3D12DescriptorHeap;
 struct ID3D12Fence;
 struct ID3D12PipelineState;
 struct ID3D12Resource;
 struct ID3D12RootSignature;
 struct IDXGISwapChain3;
+struct ID3D12_ROOT_SIGNATURE_DESC;
+struct D3D12_ROOT_SIGNATURE_DESC;
+struct ID3D12DescriptorHeap;
+
+//DRX
+struct D3D12ShaderCompilerInfo;
+struct DXRGlobal;
+struct D3D12Resources;
+struct ViewCB;
+struct MaterialCB;
 
 constexpr int SWAPCHAIN_BUFFER_COUNT = 2;
 
@@ -42,6 +52,7 @@ struct Dx_Image {
 // Initialization.
 //
 void dx_initialize();
+ID3D12RootSignature* Create_Root_Signature(const D3D12_ROOT_SIGNATURE_DESC& desc);
 void dx_shutdown();
 void dx_release_resources();
 void dx_wait_device_idle();
@@ -58,22 +69,37 @@ ID3D12PipelineState* dx_find_pipeline(const Vk_Pipeline_Def& def);
 // Rendering setup.
 //
 void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t color);
+
+void drx_Reset();
+void drx_AddBottomLevelMeshForWorld();
+int drx_AddBottomLevelMesh();
+void drx_AddBottomLevelMeshData(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal);
+
+void drx_AddBottomLeveIndexesData(unsigned *indices, int numIndices);
+void drx_AddBottomLevelIndex(unsigned index);
+void drx_AddBottomLevelVertex(float	*xyz, float* normal);
+
+void drx_AddTopLevelIndex(int bottomLevelIndex);
+void drx_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], float origin[3]);
+
+void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal);
 void dx_bind_geometry();
 void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Depth_Range depth_range, bool indexed, bool lines);
 void dx_begin_frame();
 void dx_end_frame();
 
-struct Dx_Instance {
+struct Dx_Instance
+{
 	bool active = false;
 
-	ID3D12Device* device = nullptr;
+	ID3D12Device5* device = nullptr;
 	ID3D12CommandQueue* command_queue = nullptr;
 	IDXGISwapChain3* swapchain = nullptr;
 	UINT frame_index = 0;
 
 	ID3D12CommandAllocator* command_allocator = nullptr;
 	ID3D12CommandAllocator* helper_command_allocator = nullptr;
-	ID3D12GraphicsCommandList* command_list = nullptr;
+	ID3D12GraphicsCommandList4* command_list = nullptr;
 	
 	ID3D12Fence* fence = nullptr;
 	UINT64 fence_value = 0;
@@ -137,6 +163,20 @@ struct Dx_Instance {
 	ID3D12PipelineState* surface_debug_pipeline_solid = nullptr;
 	ID3D12PipelineState* surface_debug_pipeline_outline = nullptr;
 	ID3D12PipelineState* images_debug_pipeline = nullptr;
+
+	//DXR
+	bool dxr_initialized{ false };
+	D3D12ShaderCompilerInfo* shaderCompiler;
+
+	ID3D12DescriptorHeap* cbvSrvUavRayGenHeaps;
+	ID3D12DescriptorHeap* samplerHeap;
+
+	int width;
+	int height;
+
+	ID3D12Resource* DXROutput;
+	DXRGlobal* dxr = {};
+	D3D12Resources* resources = {};
 };
 
 struct Dx_World {
@@ -155,4 +195,17 @@ struct Dx_World {
 	//
 	int current_image_indices[2];
 	float modelview_transform[16];
+	vec3_t		viewOrg;
+	vec3_t		viewaxisForword;
+	vec2_t		viewFov;
+	
+
+	//DXR
+	ID3D12Resource*									viewCB;
+	ViewCB*											viewCBData;
+	UINT8*											viewCBStart;	
+	
+	ID3D12Resource*									materialCB;
+	MaterialCB*										materialCBData;
+	UINT8*											materialCBStart;
 };

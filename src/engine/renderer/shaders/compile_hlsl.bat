@@ -6,6 +6,11 @@ set tools_dir=..\..\..\..\tools
 set bin2hex=%tools_dir%\bin2hex.exe
 set bin2hex_cpp=%tools_dir%\bin2hex.cpp
 
+echo %tools_dir%
+echo %bin2hex%
+echo %bin2hex_cpp%
+
+
 if not exist %bin2hex% (
     cl.exe /EHsc /nologo /Fe%tools_dir%\ /Fo%tools_dir%\ %bin2hex_cpp%
 )
@@ -13,7 +18,7 @@ if not exist %bin2hex% (
 set PATH=%tools_dir%;%PATH%
 
 @rem single texture VS
-fxc.exe /nologo /T vs_4_0 /E single_texture_vs /Fo shader.bin shaders.hlsl
+fxc.exe /nologo /T vs_4_0 /E single_texture_vs /Fe single_texture_vs.txt /Fo shader.bin shaders.hlsl
 %bin2hex% shader.bin single_texture_vs > hlsl_compiled/single_texture_vs.cpp
 del shader.bin
 
@@ -80,3 +85,5 @@ del shader.bin
 fxc.exe /nologo /T ps_4_0 /E multi_texture_add_ps /Fo shader.bin shaders.hlsl /DALPHA_TEST_GE80
 %bin2hex% shader.bin multi_texture_add_ge80_ps > hlsl_compiled/multi_texture_add_ge80_ps.cpp
 del shader.bin
+
+pause

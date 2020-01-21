@@ -1,11 +1,15 @@
+//NOTE run compile_hlsl.bat
+
 struct Single_Texture_PS_Data {
     float4 position : SV_POSITION;
+	float4 normal : NORMAL;
     float4 color  : COLOR;
     float2 uv0 : TEXCOORD;
 };
 
 struct Multi_Texture_PS_Data {
     float4 position : SV_POSITION;
+	float4 normal : NORMAL;
     float4 color  : COLOR;
     float2 uv0 : TEXCOORD0;
     float2 uv1 : TEXCOORD1;
@@ -25,11 +29,13 @@ SamplerState sampler1 : register(s1);
 
 Single_Texture_PS_Data single_texture_vs(
     float4 position : POSITION,
+	float4 normal	: NORMAL,
     float4 color    : COLOR,
     float2 uv0      : TEXCOORD)
 {
     Single_Texture_PS_Data ps_data;
     ps_data.position = mul(clip_space_xform, position);
+	ps_data.normal = normal;	
     ps_data.color = color;
     ps_data.uv0 = uv0;
     return ps_data;
@@ -37,6 +43,7 @@ Single_Texture_PS_Data single_texture_vs(
 
 Single_Texture_PS_Data single_texture_clipping_plane_vs(
     float4 position : POSITION,
+	float4 normal	: NORMAL,
     float4 color    : COLOR,
     float2 uv0      : TEXCOORD,
     out float clip : SV_ClipDistance)
@@ -45,20 +52,24 @@ Single_Texture_PS_Data single_texture_clipping_plane_vs(
 
     Single_Texture_PS_Data ps_data;
     ps_data.position = mul(clip_space_xform, position);
+	ps_data.normal = normal;
     ps_data.color = color;
     ps_data.uv0 = uv0;
     return ps_data;
 }
 
 Multi_Texture_PS_Data multi_texture_vs(
+	in uint VertID : SV_VertexID,
     float4 position : POSITION,
+	float4 normal	: NORMAL,
     float4 color    : COLOR,
     float2 uv0      : TEXCOORD0,
     float2 uv1      : TEXCOORD1)
 {
     Multi_Texture_PS_Data ps_data;
     ps_data.position = mul(clip_space_xform, position);
-    ps_data.color = color;
+	ps_data.normal = normal;
+	ps_data.color = color;
     ps_data.uv0 = uv0;
     ps_data.uv1 = uv1;
     return ps_data;
@@ -66,6 +77,7 @@ Multi_Texture_PS_Data multi_texture_vs(
 
 Multi_Texture_PS_Data multi_texture_clipping_plane_vs(
     float4 position : POSITION,
+	float4 normal	: NORMAL,
     float4 color    : COLOR,
     float2 uv0      : TEXCOORD0,
     float2 uv1      : TEXCOORD1,
@@ -75,6 +87,7 @@ Multi_Texture_PS_Data multi_texture_clipping_plane_vs(
 
     Multi_Texture_PS_Data ps_data;
     ps_data.position = mul(clip_space_xform, position);
+	ps_data.normal = normal;
     ps_data.color = color;
     ps_data.uv0 = uv0;
     ps_data.uv1 = uv1;
@@ -82,7 +95,10 @@ Multi_Texture_PS_Data multi_texture_clipping_plane_vs(
 }
 
 float4 single_texture_ps(Single_Texture_PS_Data data) : SV_TARGET {
+	//vertex lit world
+
     float4 out_color = data.color * texture0.Sample(sampler0, data.uv0);
+	//float4 out_color = (data.normal + float4(1, 1, 1, 0)) * float4(0.5f, 0.5f, 0.5f, 1); //show normals
 
 #if defined(ALPHA_TEST_GT0)
     if (out_color.a == 0.0f) discard;
@@ -96,8 +112,11 @@ float4 single_texture_ps(Single_Texture_PS_Data data) : SV_TARGET {
 }
 
 float4 multi_texture_mul_ps(Multi_Texture_PS_Data data) : SV_TARGET {
-    float4 out_color = data.color * texture0.Sample(sampler0, data.uv0) * texture1.Sample(sampler1, data.uv1);
-
+	//texture0 == defuse
+	//texture1 == light map
+	float4 out_color = data.color * texture0.Sample(sampler0, data.uv0) *  texture1.Sample(sampler1, data.uv1);
+	//float4 out_color = (data.normal + float4(1, 1, 1, 0)) * float4(0.5f,0.5f,0.5f,1);//show normals
+	out_color.a = 1.0f;
 #if defined(ALPHA_TEST_GT0)
     if (out_color.a == 0.0f) discard;
 #elif defined(ALPHA_TEST_LT80)

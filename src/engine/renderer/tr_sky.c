@@ -499,7 +499,9 @@ static void DrawSkyBox( shader_t *shader )
 				vk_bind_geometry();
 				vk_shade_geometry(vk.skybox_pipeline, false, r_showsky->integer ? Vk_Depth_Range::force_zero : Vk_Depth_Range::force_one);
 			}
-			if (dx.active) {
+			
+			if (dx.active)
+			{
 				dx_bind_geometry();
 				dx_shade_geometry(dx.skybox_pipeline, false, r_showsky->integer ? Vk_Depth_Range::force_zero : Vk_Depth_Range::force_one, true, false);
 			}
@@ -714,6 +716,7 @@ Other things could be stuck in here, like birds in the sky, etc
 ================
 */
 void RB_StageIteratorSky( void ) {
+	
 	// go through all the polygons and project them onto
 	// the sky box to see which blocks on each side need
 	// to be drawn

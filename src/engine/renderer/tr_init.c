@@ -35,6 +35,7 @@ Vk_World	vk_world;
 Dx_Instance dx;
 Dx_World	dx_world;
 
+
 static void GfxInfo_f( void );
 
 cvar_t *r_renderAPI;

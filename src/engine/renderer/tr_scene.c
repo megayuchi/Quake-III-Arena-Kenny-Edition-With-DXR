@@ -122,6 +122,8 @@ void RE_AddPolyToScene( qhandle_t hShader, int numVerts, const polyVert_t *verts
 	fog_t		*fog;
 	vec3_t		bounds[2];
 
+	//MICK wall marks, player blob shadows
+
 	if ( !tr.registered ) {
 		return;
 	}
@@ -199,6 +201,9 @@ RE_AddRefEntityToScene
 =====================
 */
 void RE_AddRefEntityToScene( const refEntity_t *ent ) {
+
+	//MICK wepons, pickups, moving trains
+
 	if ( !tr.registered ) {
 		return;
 	}
@@ -278,6 +283,14 @@ to handle mirrors,
 void RE_RenderScene( const refdef_t *fd ) {
 	viewParms_t		parms;
 	int				startTime;
+
+	if (fd->rdflags == 0) //we only want the camera for the "main" scene 
+	{
+		Com_Memcpy(dx_world.viewOrg, fd->vieworg, sizeof(vec3_t));
+		Com_Memcpy(dx_world.viewaxisForword, fd->viewaxis[0], sizeof(vec3_t));
+		dx_world.viewFov[0] = fd->fov_x;
+		dx_world.viewFov[1] = fd->fov_y;
+	}
 
 	if ( !tr.registered ) {
 		return;

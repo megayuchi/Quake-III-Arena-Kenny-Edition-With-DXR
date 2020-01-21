@@ -8,23 +8,28 @@
 
 #include "D3d12.h"
 #include "DXGI1_4.h"
+#include "dxr.h"
+
+#include <sstream>
 
 #pragma comment (lib, "D3d12.lib")
 #pragma comment (lib, "DXGI.lib")
 
 const int VERTEX_CHUNK_SIZE = 512 * 1024;
 
-const int XYZ_SIZE      = 4 * VERTEX_CHUNK_SIZE;
-const int COLOR_SIZE    = 1 * VERTEX_CHUNK_SIZE;
-const int ST0_SIZE      = 2 * VERTEX_CHUNK_SIZE;
-const int ST1_SIZE      = 2 * VERTEX_CHUNK_SIZE;
+const int XYZ_SIZE = 4 * VERTEX_CHUNK_SIZE;
+const int NORMAL_SIZE = 4 * VERTEX_CHUNK_SIZE;
+const int COLOR_SIZE = 1 * VERTEX_CHUNK_SIZE;
+const int ST0_SIZE = 2 * VERTEX_CHUNK_SIZE;
+const int ST1_SIZE = 2 * VERTEX_CHUNK_SIZE;
 
-const int XYZ_OFFSET    = 0;
-const int COLOR_OFFSET  = XYZ_OFFSET + XYZ_SIZE;
-const int ST0_OFFSET    = COLOR_OFFSET + COLOR_SIZE;
-const int ST1_OFFSET    = ST0_OFFSET + ST0_SIZE;
+const int XYZ_OFFSET = 0;
+const int NORMAL_OFFSET = XYZ_OFFSET + XYZ_SIZE;
+const int COLOR_OFFSET = NORMAL_OFFSET + NORMAL_SIZE;
+const int ST0_OFFSET = COLOR_OFFSET + COLOR_SIZE;
+const int ST1_OFFSET = ST0_OFFSET + ST0_SIZE;
 
-const int VERTEX_BUFFER_SIZE = XYZ_SIZE + COLOR_SIZE + ST0_SIZE + ST1_SIZE;
+const int VERTEX_BUFFER_SIZE = XYZ_SIZE + NORMAL_SIZE + COLOR_SIZE + ST0_SIZE + ST1_SIZE;
 const int INDEX_BUFFER_SIZE = 2 * 1024 * 1024;
 
 #define DX_CHECK(function_call) { \
@@ -37,16 +42,50 @@ static DXGI_FORMAT get_depth_format() {
 	if (r_stencilbits->integer > 0) {
 		glConfig.stencilBits = 8;
 		return DXGI_FORMAT_D24_UNORM_S8_UINT;
-	} else {
+	}
+	else {
 		glConfig.stencilBits = 0;
 		return DXGI_FORMAT_D32_FLOAT;
 	}
 }
 
-static void get_hardware_adapter(IDXGIFactory4* factory, IDXGIAdapter1** adapter) {
-	DXGI_ADAPTER_DESC1 desc;
+static void get_hardware_adapter(IDXGIFactory4* factory, IDXGIAdapter1** adapter)
+{
+#ifdef ENABLE_DXR
+
+	// Create the device
+	UINT adapter_index = 0;
+
+	while (factory->EnumAdapters1(adapter_index++, adapter) != DXGI_ERROR_NOT_FOUND)
+	{
+		DXGI_ADAPTER_DESC1 adapterDesc;
+		(*adapter)->GetDesc1(&adapterDesc);
+		ID3D12Device5* dummyDevice = nullptr;
+		if (SUCCEEDED(D3D12CreateDevice(*adapter, D3D_FEATURE_LEVEL_12_1, _uuidof(ID3D12Device5), (void**)&dummyDevice)))
+		{
+			// Check if the device supports ray tracing.
+			D3D12_FEATURE_DATA_D3D12_OPTIONS5 features = {};
+			HRESULT hr = dummyDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &features, sizeof(features));
+			SAFE_RELEASE(dummyDevice);
+			dummyDevice = nullptr;
+			if (FAILED(hr) || features.RaytracingTier < D3D12_RAYTRACING_TIER_1_0)
+			{
+				continue;
+			}
+			else
+			{
+				return;
+			}
+
+			//printf("Running on DXGI Adapter %S\n", adapterDesc.Description);
+			break;
+		}
+	}
+#else
+
 	UINT adapter_index = 0;
 	while (factory->EnumAdapters1(adapter_index++, adapter) != DXGI_ERROR_NOT_FOUND) {
+		DXGI_ADAPTER_DESC1 desc;
 		(*adapter)->GetDesc1(&desc);
 		if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
 			continue;
@@ -57,6 +96,7 @@ static void get_hardware_adapter(IDXGIFactory4* factory, IDXGIAdapter1** adapter
 		}
 	}
 	*adapter = nullptr;
+#endif
 }
 
 static void record_and_run_commands(std::function<void(ID3D12GraphicsCommandList*)> recorder) {
@@ -70,7 +110,7 @@ static void record_and_run_commands(std::function<void(ID3D12GraphicsCommandList
 	ID3D12CommandList* command_lists[] = { command_list };
 	dx.command_queue->ExecuteCommandLists(1, command_lists);
 	dx_wait_device_idle();
-	
+
 	command_list->Release();
 	dx.helper_command_allocator->Reset();
 }
@@ -118,7 +158,14 @@ static D3D12_RESOURCE_DESC get_buffer_desc(UINT64 size) {
 
 ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def);
 
-void dx_initialize() {
+void dx_initialize()
+{
+#ifdef ENABLE_DXR
+	dx.dxr = new DXRGlobal;
+	Com_Memset(dx.dxr, 0, sizeof(DXRGlobal));
+
+#endif
+
 	// enable validation in debug configuration
 #if defined(_DEBUG)
 	ID3D12Debug* debug_controller;
@@ -135,7 +182,25 @@ void dx_initialize() {
 	{
 		IDXGIAdapter1* hardware_adapter;
 		get_hardware_adapter(factory, &hardware_adapter);
-		DX_CHECK(D3D12CreateDevice(hardware_adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&dx.device)));
+
+		D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+#ifdef ENABLE_DXR
+		featureLevel = D3D_FEATURE_LEVEL_12_1;
+#endif
+		DX_CHECK(D3D12CreateDevice(hardware_adapter, featureLevel, IID_PPV_ARGS(&dx.device)));
+
+#ifdef ENABLE_DXR
+		// Check if the device supports ray tracing.
+		D3D12_FEATURE_DATA_D3D12_OPTIONS5 features = {};
+		HRESULT hr = dx.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &features, sizeof(features));
+		if (FAILED(hr) || features.RaytracingTier < D3D12_RAYTRACING_TIER_1_0)
+		{
+			dx.device = nullptr;
+			ri.Error(ERR_FATAL, "Direct3D: error returned by %s", ".RaytracingTier < D3D12_RAYTRACING_TIER_1_0");
+		}
+#endif
+
+
 		hardware_adapter->Release();
 	}
 
@@ -168,7 +233,7 @@ void dx_initialize() {
 			nullptr,
 			nullptr,
 			&swapchain
-			));
+		));
 
 		DX_CHECK(factory->MakeWindowAssociation(g_wv.hWnd_dx, DXGI_MWA_NO_ALT_ENTER));
 		swapchain->QueryInterface(__uuidof(IDXGISwapChain3), (void**)&dx.swapchain);
@@ -359,7 +424,7 @@ void dx_initialize() {
 		ranges[3].NumDescriptors = 1;
 		ranges[3].BaseShaderRegister = 1;
 
-		D3D12_ROOT_PARAMETER root_parameters[5] {};
+		D3D12_ROOT_PARAMETER root_parameters[5]{};
 
 		root_parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 		root_parameters[0].Constants.ShaderRegister = 0;
@@ -369,7 +434,7 @@ void dx_initialize() {
 		for (int i = 1; i < 5; i++) {
 			root_parameters[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 			root_parameters[i].DescriptorTable.NumDescriptorRanges = 1;
-			root_parameters[i].DescriptorTable.pDescriptorRanges = &ranges[i-1];
+			root_parameters[i].DescriptorTable.pDescriptorRanges = &ranges[i - 1];
 			root_parameters[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 		}
 
@@ -380,17 +445,7 @@ void dx_initialize() {
 		root_signature_desc.pStaticSamplers = nullptr;
 		root_signature_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-		ID3DBlob* signature;
-		ID3DBlob* error;
-		DX_CHECK(D3D12SerializeRootSignature(&root_signature_desc, D3D_ROOT_SIGNATURE_VERSION_1,
-			&signature, &error));
-		DX_CHECK(dx.device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(),
-			IID_PPV_ARGS(&dx.root_signature)));
-
-		if (signature != nullptr)
-			signature->Release();
-		if (error != nullptr)
-			error->Release();
+		dx.root_signature = Create_Root_Signature(root_signature_desc);
 	}
 
 	//
@@ -408,7 +463,7 @@ void dx_initialize() {
 
 		void* p_data;
 		D3D12_RANGE read_range{};
-        DX_CHECK(dx.geometry_buffer->Map(0, &read_range, &p_data));
+		DX_CHECK(dx.geometry_buffer->Map(0, &read_range, &p_data));
 
 		dx.vertex_buffer_ptr = static_cast<byte*>(p_data);
 
@@ -442,8 +497,8 @@ void dx_initialize() {
 				def.clipping_plane = false;
 				def.shadow_phase = Vk_Shadow_Phase::shadow_edges_rendering;
 
-				cullType_t cull_types[2] = {CT_FRONT_SIDED, CT_BACK_SIDED};
-				bool mirror_flags[2] = {false, true};
+				cullType_t cull_types[2] = { CT_FRONT_SIDED, CT_BACK_SIDED };
+				bool mirror_flags[2] = { false, true };
 
 				for (int i = 0; i < 2; i++) {
 					def.face_culling = cull_types[i];
@@ -482,7 +537,7 @@ void dx_initialize() {
 				GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ONE | GLS_DEPTHFUNC_EQUAL,
 				GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE | GLS_DEPTHFUNC_EQUAL
 			};
-			bool polygon_offset[2] = {false, true};
+			bool polygon_offset[2] = { false, true };
 
 			for (int i = 0; i < 2; i++) {
 				unsigned fog_state = fog_state_bits[i];
@@ -543,8 +598,45 @@ void dx_initialize() {
 	dx.active = true;
 }
 
+/**
+* Create a root signature.
+*/
+ID3D12RootSignature* Create_Root_Signature(const D3D12_ROOT_SIGNATURE_DESC& desc)
+{
+	HRESULT hr;
+	ID3DBlob* sig;
+	ID3DBlob* error;
+
+	hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &error);
+	if (FAILED(hr))
+	{
+		ri.Error(ERR_FATAL, "Error: failed to serialize root signature!");
+	}
+
+	ID3D12RootSignature* pRootSig;
+	LPVOID buffer = sig->GetBufferPointer();
+	SIZE_T bufferSize = sig->GetBufferSize();
+	hr = dx.device->CreateRootSignature(0, buffer, bufferSize, IID_PPV_ARGS(&pRootSig));
+	if (FAILED(hr))
+	{
+		ri.Error(ERR_FATAL, "Error: failed to create root signature!");
+	}
+
+	if (sig != nullptr)
+		sig->Release();
+	if (error != nullptr)
+		error->Release();
+
+	return pRootSig;
+}
+
 void dx_shutdown() {
 	::CloseHandle(dx.fence_event);
+
+#ifdef ENABLE_DXR
+	DXR::Destroy(dx, *dx.dxr);
+	delete dx.dxr;
+#endif
 
 	for (int i = 0; i < SWAPCHAIN_BUFFER_COUNT; i++) {
 		dx.render_targets[i]->Release();
@@ -585,6 +677,8 @@ void dx_shutdown() {
 	dx.surface_debug_pipeline_outline->Release();
 	dx.images_debug_pipeline->Release();
 
+
+
 	dx.device->Release();
 
 	Com_Memset(&dx, 0, sizeof(dx));
@@ -610,6 +704,8 @@ void dx_release_resources() {
 	dx.xyz_elements = 0;
 	dx.color_st_elements = 0;
 	dx.index_buffer_offset = 0;
+
+
 }
 
 void dx_wait_device_idle() {
@@ -619,7 +715,7 @@ void dx_wait_device_idle() {
 	WaitForSingleObject(dx.fence_event, INFINITE);
 }
 
-Dx_Image dx_create_image(int width, int height, Dx_Image_Format format, int mip_levels,  bool repeat_texture, int image_index) {
+Dx_Image dx_create_image(int width, int height, Dx_Image_Format format, int mip_levels, bool repeat_texture, int image_index) {
 	Dx_Image image;
 
 	DXGI_FORMAT dx_format;
@@ -683,7 +779,7 @@ void dx_upload_image_data(ID3D12Resource* texture, int width, int height, int mi
 	//
 	// Initialize subresource layouts int the upload texture.
 	//
-	auto align =[](size_t value, size_t alignment) {
+	auto align = [](size_t value, size_t alignment) {
 		return (value + alignment - 1) & ~(alignment - 1);
 	};
 
@@ -711,12 +807,12 @@ void dx_upload_image_data(ID3D12Resource* texture, int width, int height, int mi
 	//
 	ID3D12Resource* upload_texture;
 	DX_CHECK(dx.device->CreateCommittedResource(
-			&get_heap_properties(D3D12_HEAP_TYPE_UPLOAD),
-			D3D12_HEAP_FLAG_NONE,
-			&get_buffer_desc(buffer_size),
-			D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr,
-			IID_PPV_ARGS(&upload_texture)));
+		&get_heap_properties(D3D12_HEAP_TYPE_UPLOAD),
+		D3D12_HEAP_FLAG_NONE,
+		&get_buffer_desc(buffer_size),
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&upload_texture)));
 
 	byte* upload_texture_data;
 	DX_CHECK(upload_texture->Map(0, nullptr, reinterpret_cast<void**>(&upload_texture_data)));
@@ -739,7 +835,7 @@ void dx_upload_image_data(ID3D12Resource* texture, int width, int height, int mi
 	// Copy data from upload texture to destination texture.
 	//
 	record_and_run_commands([texture, upload_texture, &regions, mip_levels]
-		(ID3D12GraphicsCommandList* command_list)
+	(ID3D12GraphicsCommandList* command_list)
 	{
 		command_list->ResourceBarrier(1, &get_transition_barrier(texture,
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST));
@@ -766,6 +862,9 @@ void dx_upload_image_data(ID3D12Resource* texture, int width, int height, int mi
 }
 
 static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
+
+	//NOTE run compile_hlsl.bat
+
 	// single texture VS
 	extern unsigned char single_texture_vs[];
 	extern long long single_texture_vs_size;
@@ -838,21 +937,26 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 	if (def.shader_type == Vk_Shader_Type::single_texture) {
 		if (def.clipping_plane) {
 			vs_bytecode = BYTECODE(single_texture_clipping_plane_vs);
-		} else {
+		}
+		else {
 			vs_bytecode = BYTECODE(single_texture_vs);
 		}
 		GET_PS_BYTECODE(single_texture)
-	} else if (def.shader_type == Vk_Shader_Type::multi_texture_mul) {
+	}
+	else if (def.shader_type == Vk_Shader_Type::multi_texture_mul) {
 		if (def.clipping_plane) {
 			vs_bytecode = BYTECODE(multi_texture_clipping_plane_vs);
-		} else {
+		}
+		else {
 			vs_bytecode = BYTECODE(multi_texture_vs);
 		}
 		GET_PS_BYTECODE(multi_texture_mul)
-	} else if (def.shader_type == Vk_Shader_Type::multi_texture_add) {
+	}
+	else if (def.shader_type == Vk_Shader_Type::multi_texture_add) {
 		if (def.clipping_plane) {
 			vs_bytecode = BYTECODE(multi_texture_clipping_plane_vs);
-		} else {
+		}
+		else {
 			vs_bytecode = BYTECODE(multi_texture_vs);
 		}
 		GET_PS_BYTECODE(multi_texture_add)
@@ -865,9 +969,10 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 	D3D12_INPUT_ELEMENT_DESC input_element_desc[] =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 2, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 3, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0,	D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 2, 0,		D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 3, 0,	D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 4, 0,	D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
 
 	//
@@ -882,82 +987,82 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 
 	if (rt_blend_desc.BlendEnable) {
 		switch (def.state_bits & GLS_SRCBLEND_BITS) {
-			case GLS_SRCBLEND_ZERO:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_ZERO;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_ZERO;
-				break;
-			case GLS_SRCBLEND_ONE:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_ONE;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_ONE;
-				break;
-			case GLS_SRCBLEND_DST_COLOR:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_DEST_COLOR;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
-				break;
-			case GLS_SRCBLEND_ONE_MINUS_DST_COLOR:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
-				break;
-			case GLS_SRCBLEND_SRC_ALPHA:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_SRC_ALPHA;
-				break;
-			case GLS_SRCBLEND_ONE_MINUS_SRC_ALPHA:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_INV_SRC_ALPHA;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
-				break;
-			case GLS_SRCBLEND_DST_ALPHA:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_DEST_ALPHA;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
-				break;
-			case GLS_SRCBLEND_ONE_MINUS_DST_ALPHA:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_INV_DEST_ALPHA;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
-				break;
-			case GLS_SRCBLEND_ALPHA_SATURATE:
-				rt_blend_desc.SrcBlend = D3D12_BLEND_SRC_ALPHA_SAT;
-				rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_SRC_ALPHA_SAT;
-				break;
-			default:
-				ri.Error( ERR_DROP, "create_pipeline: invalid src blend state bits\n" );
-				break;
+		case GLS_SRCBLEND_ZERO:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_ZERO;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_ZERO;
+			break;
+		case GLS_SRCBLEND_ONE:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_ONE;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_ONE;
+			break;
+		case GLS_SRCBLEND_DST_COLOR:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_DEST_COLOR;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+			break;
+		case GLS_SRCBLEND_ONE_MINUS_DST_COLOR:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
+			break;
+		case GLS_SRCBLEND_SRC_ALPHA:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_SRC_ALPHA;
+			break;
+		case GLS_SRCBLEND_ONE_MINUS_SRC_ALPHA:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_INV_SRC_ALPHA;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+			break;
+		case GLS_SRCBLEND_DST_ALPHA:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_DEST_ALPHA;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+			break;
+		case GLS_SRCBLEND_ONE_MINUS_DST_ALPHA:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_INV_DEST_ALPHA;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
+			break;
+		case GLS_SRCBLEND_ALPHA_SATURATE:
+			rt_blend_desc.SrcBlend = D3D12_BLEND_SRC_ALPHA_SAT;
+			rt_blend_desc.SrcBlendAlpha = D3D12_BLEND_SRC_ALPHA_SAT;
+			break;
+		default:
+			ri.Error(ERR_DROP, "create_pipeline: invalid src blend state bits\n");
+			break;
 		}
 		switch (def.state_bits & GLS_DSTBLEND_BITS) {
-			case GLS_DSTBLEND_ZERO:
-				rt_blend_desc.DestBlend = D3D12_BLEND_ZERO;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_ZERO;
-				break;
-			case GLS_DSTBLEND_ONE:
-				rt_blend_desc.DestBlend = D3D12_BLEND_ONE;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_ONE;
-				break;
-			case GLS_DSTBLEND_SRC_COLOR:
-				rt_blend_desc.DestBlend = D3D12_BLEND_SRC_COLOR;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_SRC_ALPHA;
-				break;
-			case GLS_DSTBLEND_ONE_MINUS_SRC_COLOR:
-				rt_blend_desc.DestBlend = D3D12_BLEND_INV_SRC_COLOR;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
-				break;
-			case GLS_DSTBLEND_SRC_ALPHA:
-				rt_blend_desc.DestBlend = D3D12_BLEND_SRC_ALPHA;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_SRC_ALPHA;
-				break;
-			case GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA:
-				rt_blend_desc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
-				break;
-			case GLS_DSTBLEND_DST_ALPHA:
-				rt_blend_desc.DestBlend = D3D12_BLEND_DEST_ALPHA;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_DEST_ALPHA;
-				break;
-			case GLS_DSTBLEND_ONE_MINUS_DST_ALPHA:
-				rt_blend_desc.DestBlend = D3D12_BLEND_INV_DEST_ALPHA;
-				rt_blend_desc.DestBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
-				break;
-			default:
-				ri.Error( ERR_DROP, "create_pipeline: invalid dst blend state bits\n" );
-				break;
+		case GLS_DSTBLEND_ZERO:
+			rt_blend_desc.DestBlend = D3D12_BLEND_ZERO;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_ZERO;
+			break;
+		case GLS_DSTBLEND_ONE:
+			rt_blend_desc.DestBlend = D3D12_BLEND_ONE;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_ONE;
+			break;
+		case GLS_DSTBLEND_SRC_COLOR:
+			rt_blend_desc.DestBlend = D3D12_BLEND_SRC_COLOR;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_SRC_ALPHA;
+			break;
+		case GLS_DSTBLEND_ONE_MINUS_SRC_COLOR:
+			rt_blend_desc.DestBlend = D3D12_BLEND_INV_SRC_COLOR;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+			break;
+		case GLS_DSTBLEND_SRC_ALPHA:
+			rt_blend_desc.DestBlend = D3D12_BLEND_SRC_ALPHA;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_SRC_ALPHA;
+			break;
+		case GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA:
+			rt_blend_desc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+			break;
+		case GLS_DSTBLEND_DST_ALPHA:
+			rt_blend_desc.DestBlend = D3D12_BLEND_DEST_ALPHA;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+			break;
+		case GLS_DSTBLEND_ONE_MINUS_DST_ALPHA:
+			rt_blend_desc.DestBlend = D3D12_BLEND_INV_DEST_ALPHA;
+			rt_blend_desc.DestBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
+			break;
+		default:
+			ri.Error(ERR_DROP, "create_pipeline: invalid dst blend state bits\n");
+			break;
 		}
 	}
 	rt_blend_desc.BlendOp = D3D12_BLEND_OP_ADD;
@@ -1008,14 +1113,16 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 		depth_stencil_state.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 
 		depth_stencil_state.BackFace = depth_stencil_state.FrontFace;
-	} else if (def.shadow_phase == Vk_Shadow_Phase::fullscreen_quad_rendering) {
+	}
+	else if (def.shadow_phase == Vk_Shadow_Phase::fullscreen_quad_rendering) {
 		depth_stencil_state.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 		depth_stencil_state.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 		depth_stencil_state.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
 		depth_stencil_state.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_NOT_EQUAL;
 
 		depth_stencil_state.BackFace = depth_stencil_state.FrontFace;
-	} else {
+	}
+	else {
 		depth_stencil_state.FrontFace = {};
 		depth_stencil_state.BackFace = {};
 	}
@@ -1031,7 +1138,7 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 	pipeline_desc.SampleMask = UINT_MAX;
 	pipeline_desc.RasterizerState = rasterization_state;
 	pipeline_desc.DepthStencilState = depth_stencil_state;
-	pipeline_desc.InputLayout = { input_element_desc, def.shader_type == Vk_Shader_Type::single_texture ? 3u : 4u };
+	pipeline_desc.InputLayout = { input_element_desc, def.shader_type == Vk_Shader_Type::single_texture ? 4u : 5u };
 	pipeline_desc.PrimitiveTopologyType = def.line_primitives ? D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE : D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 	pipeline_desc.NumRenderTargets = 1;
 	pipeline_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -1062,9 +1169,11 @@ void dx_create_sampler_descriptor(const Vk_Sampler_Def& def, Dx_Sampler_Index sa
 
 	if (def.gl_mag_filter == GL_NEAREST) {
 		mag = 0;
-	} else if (def.gl_mag_filter == GL_LINEAR) {
+	}
+	else if (def.gl_mag_filter == GL_LINEAR) {
 		mag = 1;
-	} else {
+	}
+	else {
 		ri.Error(ERR_FATAL, "create_sampler_descriptor: invalid gl_mag_filter");
 	}
 
@@ -1073,23 +1182,29 @@ void dx_create_sampler_descriptor(const Vk_Sampler_Def& def, Dx_Sampler_Index sa
 		min = 0;
 		mip = 0;
 		max_lod_0_25 = true;
-	} else if (def.gl_min_filter == GL_LINEAR) {
+	}
+	else if (def.gl_min_filter == GL_LINEAR) {
 		min = 1;
 		mip = 0;
 		max_lod_0_25 = true;
-	} else if (def.gl_min_filter == GL_NEAREST_MIPMAP_NEAREST) {
+	}
+	else if (def.gl_min_filter == GL_NEAREST_MIPMAP_NEAREST) {
 		min = 0;
 		mip = 0;
-	} else if (def.gl_min_filter == GL_LINEAR_MIPMAP_NEAREST) {
+	}
+	else if (def.gl_min_filter == GL_LINEAR_MIPMAP_NEAREST) {
 		min = 1;
 		mip = 0;
-	} else if (def.gl_min_filter == GL_NEAREST_MIPMAP_LINEAR) {
+	}
+	else if (def.gl_min_filter == GL_NEAREST_MIPMAP_LINEAR) {
 		min = 0;
 		mip = 1;
-	} else if (def.gl_min_filter == GL_LINEAR_MIPMAP_LINEAR) {
+	}
+	else if (def.gl_min_filter == GL_LINEAR_MIPMAP_LINEAR) {
 		min = 1;
 		mip = 1;
-	} else {
+	}
+	else {
 		ri.Error(ERR_FATAL, "vk_find_sampler: invalid gl_min_filter");
 	}
 
@@ -1152,19 +1267,20 @@ static void get_mvp_transform(float* mvp) {
 		float mvp0 = 2.0f / glConfig.vidWidth;
 		float mvp5 = 2.0f / glConfig.vidHeight;
 
-		mvp[0]  =  mvp0; mvp[1]  =  0.0f; mvp[2]  = 0.0f; mvp[3]  = 0.0f;
-		mvp[4]  =  0.0f; mvp[5]  = -mvp5; mvp[6]  = 0.0f; mvp[7]  = 0.0f;
-		mvp[8]  =  0.0f; mvp[9]  = 0.0f; mvp[10] = 1.0f; mvp[11] = 0.0f;
+		mvp[0] = mvp0; mvp[1] = 0.0f; mvp[2] = 0.0f; mvp[3] = 0.0f;
+		mvp[4] = 0.0f; mvp[5] = -mvp5; mvp[6] = 0.0f; mvp[7] = 0.0f;
+		mvp[8] = 0.0f; mvp[9] = 0.0f; mvp[10] = 1.0f; mvp[11] = 0.0f;
 		mvp[12] = -1.0f; mvp[13] = 1.0f; mvp[14] = 0.0f; mvp[15] = 1.0f;
 
-	} else {
+	}
+	else {
 		const float* p = backEnd.viewParms.projectionMatrix;
 
 		// update q3's proj matrix (opengl) to d3d conventions: z - [0, 1] instead of [-1, 1]
-		float zNear	= r_znear->value;
+		float zNear = r_znear->value;
 		float zFar = backEnd.viewParms.zFar;
 		float P10 = -zFar / (zFar - zNear);
-		float P14 = -zFar*zNear / (zFar - zNear);
+		float P14 = -zFar * zNear / (zFar - zNear);
 
 		float proj[16] = {
 			p[0],  p[1],  p[2], p[3],
@@ -1184,7 +1300,8 @@ static D3D12_RECT get_viewport_rect() {
 		r.top = 0.0f;
 		r.right = glConfig.vidWidth;
 		r.bottom = glConfig.vidHeight;
-	} else {
+	}
+	else {
 		r.left = backEnd.viewParms.viewportX;
 		r.top = glConfig.vidHeight - (backEnd.viewParms.viewportY + backEnd.viewParms.viewportHeight);
 		r.right = r.left + backEnd.viewParms.viewportWidth;
@@ -1205,13 +1322,16 @@ static D3D12_VIEWPORT get_viewport(Vk_Depth_Range depth_range) {
 	if (depth_range == Vk_Depth_Range::force_zero) {
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 0.0f;
-	} else if (depth_range == Vk_Depth_Range::force_one) {
+	}
+	else if (depth_range == Vk_Depth_Range::force_one) {
 		viewport.MinDepth = 1.0f;
 		viewport.MaxDepth = 1.0f;
-	} else if (depth_range == Vk_Depth_Range::weapon) {
+	}
+	else if (depth_range == Vk_Depth_Range::weapon) {
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 0.3f;
-	} else {
+	}
+	else {
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 1.0f;
 	}
@@ -1259,29 +1379,125 @@ void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t col
 	}
 }
 
-void dx_bind_geometry() {
+void drx_Reset()
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	drxAsm.Reset();
+}
+
+void drx_AddBottomLevelMeshForWorld()
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	if (drxAsm.MeshCount() <= 0)
+	{
+		drxAsm.AddMesh();
+	}
+}
+
+int drx_AddBottomLevelMesh()
+{
+	//s_dump_geometry_static = s_dump_geometry_staticBuilding;
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	return drxAsm.AddMesh();
+}
+
+void drx_AddBottomLevelMeshData(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	drxAsm.AddIndexesData(indices, numIndices);
+	drxAsm.AddVertexData(points, normal, numPoints);
+}
+
+void drx_AddBottomLeveIndexesData(unsigned *indices, int numIndices)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	drxAsm.AddIndexesData(indices, numIndices);
+}
+
+void drx_AddBottomLevelIndex(unsigned index)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	drxAsm.AddIndex(index);
+}
+
+void drx_AddBottomLevelVertex(float	*xyz, float* normal)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	drxAsm.AddVertexData(xyz, normal);
+}
+
+void drx_AddTopLevelIndex(int bottomLevelIndex)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	if (bottomLevelIndex != -1)
+	{
+		drxAsm.AddInstance(bottomLevelIndex);
+	}
+}
+
+void drx_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], float origin[3])
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	if (bottomLevelIndex != -1)
+	{
+		drxAsm.AddInstanceWithTransform(bottomLevelIndex, axis, origin);
+	}
+}
+
+void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal)
+{
+#if defined( ENABLE_DXR)
+
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	if (drxAsm.MeshCount() <= 0)
+	{
+		drxAsm.AddMesh();
+	}
+	drxAsm.AddIndexesData(indices, numIndices);
+	drxAsm.AddVertexData(points, normal, numPoints);
+#endif
+}
+void dx_bind_geometry()
+{	
 	// xyz stream
 	{
 		if ((dx.xyz_elements + tess.numVertexes) * sizeof(vec4_t) > XYZ_SIZE)
 			ri.Error(ERR_DROP, "dx_bind_geometry: vertex buffer overflow (xyz)\n");
 
-		byte* dst = dx.vertex_buffer_ptr + XYZ_OFFSET + dx.xyz_elements * sizeof(vec4_t);
-		Com_Memcpy(dst, tess.xyz, tess.numVertexes * sizeof(vec4_t));
+		{
+			byte* dst = dx.vertex_buffer_ptr + XYZ_OFFSET + dx.xyz_elements * sizeof(vec4_t);
+			Com_Memcpy(dst, tess.xyz, tess.numVertexes * sizeof(vec4_t));
+		}
+		{
+			byte* dst = dx.vertex_buffer_ptr + NORMAL_OFFSET + dx.xyz_elements * sizeof(vec4_t);
+			Com_Memcpy(dst, tess.normal, tess.numVertexes * sizeof(vec4_t));
+		}
 
 		uint32_t xyz_offset = XYZ_OFFSET + dx.xyz_elements * sizeof(vec4_t);
 
-		D3D12_VERTEX_BUFFER_VIEW xyz_view;
-		xyz_view.BufferLocation = dx.geometry_buffer->GetGPUVirtualAddress() + xyz_offset;
-		xyz_view.SizeInBytes = static_cast<UINT>(tess.numVertexes * sizeof(vec4_t));
-		xyz_view.StrideInBytes = static_cast<UINT>(sizeof(vec4_t));
-		dx.command_list->IASetVertexBuffers(0, 1, &xyz_view);
+		D3D12_VERTEX_BUFFER_VIEW xyz_view[2];
+		xyz_view[0].BufferLocation = dx.geometry_buffer->GetGPUVirtualAddress() + xyz_offset;
+		xyz_view[0].SizeInBytes = static_cast<UINT>(tess.numVertexes * sizeof(vec4_t));
+		xyz_view[0].StrideInBytes = static_cast<UINT>(sizeof(vec4_t));
+
+		xyz_view[1].BufferLocation = dx.geometry_buffer->GetGPUVirtualAddress() + NORMAL_OFFSET + dx.xyz_elements * sizeof(vec4_t);
+		xyz_view[1].SizeInBytes = static_cast<UINT>(tess.numVertexes * sizeof(vec4_t));
+		xyz_view[1].StrideInBytes = static_cast<UINT>(sizeof(vec4_t));
+
+		dx.command_list->IASetVertexBuffers(0, 2, xyz_view);
 
 		dx.xyz_elements += tess.numVertexes;
 	}
 
 	// indexes stream
 	{
-		std::size_t indexes_size = tess.numIndexes * sizeof(uint32_t);        
+		std::size_t indexes_size = tess.numIndexes * sizeof(uint32_t);
 
 		if (dx.index_buffer_offset + indexes_size > INDEX_BUFFER_SIZE)
 			ri.Error(ERR_DROP, "dx_bind_geometry: index buffer overflow\n");
@@ -1306,13 +1522,14 @@ void dx_bind_geometry() {
 	get_mvp_transform(root_constants);
 	int root_constant_count = 16;
 
-	if (backEnd.viewParms.isPortal) {
+	if (backEnd.viewParms.isPortal)
+	{
 		// Eye space transform.
-		// NOTE: backEnd.or.modelMatrix incorporates s_flipMatrix, so it should be taken into account 
+		// NOTE: backEnd.or.modelMatrix incorporates s_flipMatrix, so it should be taken into account
 		// when computing clipping plane too.
-		float* eye_xform = root_constants + 16;
+		float* eye_xform = root_constants + root_constant_count;
 		for (int i = 0; i < 12; i++) {
-			eye_xform[i] = backEnd.or.modelMatrix[(i%4)*4 + i/4 ];
+			eye_xform[i] = backEnd. or .modelMatrix[(i % 4) * 4 + i / 4];
 		}
 
 		// Clipping plane in eye coordinates.
@@ -1323,23 +1540,25 @@ void dx_bind_geometry() {
 		world_plane[3] = backEnd.viewParms.portalPlane.dist;
 
 		float eye_plane[4];
-		eye_plane[0] = DotProduct (backEnd.viewParms.or.axis[0], world_plane);
-		eye_plane[1] = DotProduct (backEnd.viewParms.or.axis[1], world_plane);
-		eye_plane[2] = DotProduct (backEnd.viewParms.or.axis[2], world_plane);
-		eye_plane[3] = DotProduct (world_plane, backEnd.viewParms.or.origin) - world_plane[3];
+		eye_plane[0] = DotProduct(backEnd.viewParms. or .axis[0], world_plane);
+		eye_plane[1] = DotProduct(backEnd.viewParms. or .axis[1], world_plane);
+		eye_plane[2] = DotProduct(backEnd.viewParms. or .axis[2], world_plane);
+		eye_plane[3] = DotProduct(world_plane, backEnd.viewParms. or .origin) - world_plane[3];
 
 		// Apply s_flipMatrix to be in the same coordinate system as eye_xfrom.
 		root_constants[28] = -eye_plane[1];
-		root_constants[29] =  eye_plane[2];
+		root_constants[29] = eye_plane[2];
 		root_constants[30] = -eye_plane[0];
-		root_constants[31] =  eye_plane[3];
+		root_constants[31] = eye_plane[3];
 
 		root_constant_count += 16;
 	}
 	dx.command_list->SetGraphicsRoot32BitConstants(0, root_constant_count, root_constants, 0);
+
 }
 
-void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Depth_Range depth_range, bool indexed, bool lines) {
+void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Depth_Range depth_range, bool indexed, bool lines)
+{	
 	// color
 	{
 		if ((dx.color_st_elements + tess.numVertexes) * sizeof(color4ub_t) > COLOR_SIZE)
@@ -1381,30 +1600,34 @@ void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Dept
 	color_st_views[2].SizeInBytes = static_cast<UINT>(tess.numVertexes * sizeof(vec2_t));
 	color_st_views[2].StrideInBytes = static_cast<UINT>(sizeof(vec2_t));
 
-	dx.command_list->IASetVertexBuffers(1, multitexture ? 3 : 2, color_st_views);
+	dx.command_list->IASetVertexBuffers(2, multitexture ? 3 : 2, color_st_views);
 	dx.color_st_elements += tess.numVertexes;
 
 	//
 	// Set descriptor tables.
 	//
 	{
+		int textureIndex = dx_world.current_image_indices[0];
+
 		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.srv_heap->GetGPUDescriptorHandleForHeapStart();
-		srv_handle.ptr += dx.srv_descriptor_size * dx_world.current_image_indices[0];
+		srv_handle.ptr += dx.srv_descriptor_size * textureIndex;
 		dx.command_list->SetGraphicsRootDescriptorTable(1, srv_handle);
 
 		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.sampler_heap->GetGPUDescriptorHandleForHeapStart();
-		const int sampler_index = dx_world.images[dx_world.current_image_indices[0]].sampler_index;
+		const int sampler_index = dx_world.images[textureIndex].sampler_index;
 		sampler_handle.ptr += dx.sampler_descriptor_size * sampler_index;
 		dx.command_list->SetGraphicsRootDescriptorTable(2, sampler_handle);
 	}
 
-	if (multitexture) {
+	if (multitexture)
+	{
+		int textureIndex = dx_world.current_image_indices[1];
 		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.srv_heap->GetGPUDescriptorHandleForHeapStart();
-		srv_handle.ptr += dx.srv_descriptor_size * dx_world.current_image_indices[1];
+		srv_handle.ptr += dx.srv_descriptor_size * textureIndex;
 		dx.command_list->SetGraphicsRootDescriptorTable(3, srv_handle);
 
 		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.sampler_heap->GetGPUDescriptorHandleForHeapStart();
-		const int sampler_index = dx_world.images[dx_world.current_image_indices[1]].sampler_index;
+		const int sampler_index = dx_world.images[textureIndex].sampler_index;
 		sampler_handle.ptr += dx.sampler_descriptor_size * sampler_index;
 		dx.command_list->SetGraphicsRootDescriptorTable(4, sampler_handle);
 	}
@@ -1428,9 +1651,11 @@ void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Dept
 		dx.command_list->DrawIndexedInstanced(tess.numIndexes, 1, 0, 0, 0);
 	else
 		dx.command_list->DrawInstanced(tess.numVertexes, 1, 0, 0);
+
 }
 
-void dx_begin_frame() {
+void dx_begin_frame()
+{
 	if (!dx.active)
 		return;
 
@@ -1443,6 +1668,14 @@ void dx_begin_frame() {
 
 	DX_CHECK(dx.command_allocator->Reset());
 	DX_CHECK(dx.command_list->Reset(dx.command_allocator, nullptr));
+
+#ifdef ENABLE_DXR
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	if (drxAsm.MeshCount() > 0) //we have some dxr meshs
+	{
+		DXR::SetupDXR(dx, dx_world, glConfig.vidWidth, glConfig.vidHeight);
+	}
+#endif
 
 	dx.command_list->SetGraphicsRootSignature(dx.root_signature);
 
@@ -1462,14 +1695,57 @@ void dx_begin_frame() {
 	dx.xyz_elements = 0;
 	dx.color_st_elements = 0;
 	dx.index_buffer_offset = 0;
+
+	{
+		//clear
+		D3D12_RECT r;
+
+		r.left = 0.0f;
+		r.top = 0.0f;
+		r.right = glConfig.vidWidth;
+		r.bottom = glConfig.vidHeight;
+
+		dx.command_list->ClearRenderTargetView(rtv_handle, colorCyan, 1, &r);
+	}
 }
 
 void dx_end_frame() {
 	if (!dx.active)
 		return;
+	
+	static cvar_t*	dxr_on = ri.Cvar_Get("dxr_on", "0", 0);
+	static cvar_t*	dxr_dump = ri.Cvar_Get("dxr_dump", "0", 0);
 
-	dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.render_targets[dx.frame_index],
-		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	if (dxr_dump->value)
+	{
+		dxr_dump->value = 0;
+		drxAsm.WriteAllTopLevelMeshsDebug();
+		//drxAsm.WriteAllBottomLevelMeshsDebug();
+	}
+	
+	if (dxr_on->value && drxAsm.MeshCount() > 0)
+	{
+		//Do RAYtrace
+		DXR::UpdateAccelerationStructures(dx, *dx.dxr, dx_world);
+		DXR::Build_Command_List(dx, *dx.dxr, dx_world);
+
+		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.render_targets[dx.frame_index],
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST));
+
+		dx.command_list->CopyResource(dx.render_targets[dx.frame_index], dx.DXROutput);
+
+		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.render_targets[dx.frame_index],
+			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT));
+
+		drxAsm.EndFrame();
+	}
+	else
+	{
+		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.render_targets[dx.frame_index],
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+	}
 
 	DX_CHECK(dx.command_list->Close());
 
@@ -1489,7 +1765,7 @@ void dx_shutdown() {}
 void dx_release_resources() {}
 void dx_wait_device_idle() {}
 
-Dx_Image dx_create_image(int width, int height, Dx_Image_Format format, int mip_levels,  bool repeat_texture, int image_index) { return Dx_Image{}; }
+Dx_Image dx_create_image(int width, int height, Dx_Image_Format format, int mip_levels, bool repeat_texture, int image_index) { return Dx_Image{}; }
 void dx_upload_image_data(ID3D12Resource* texture, int width, int height, int mip_levels, const uint8_t* pixels, int bytes_per_pixel) {}
 void dx_create_sampler_descriptor(const Vk_Sampler_Def& def, Dx_Sampler_Index sampler_index) {}
 ID3D12PipelineState* dx_find_pipeline(const Vk_Pipeline_Def& def) { return nullptr; }

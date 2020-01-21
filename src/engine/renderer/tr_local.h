@@ -591,9 +591,10 @@ typedef struct {
 	// triangle definitions (no normals at points)
 	int			numPoints;
 	int			numIndices;
-	int			ofsIndices;
+	int			ofsIndices;	
 	float		points[1][VERTEXSIZE];	// variable sized
 										// there is a variable length list of indices here also
+	
 } srfSurfaceFace_t;
 
 
@@ -737,6 +738,7 @@ typedef struct model_s {
 	md4Header_t	*md4;				// only if type == MOD_MD4
 
 	int			 numLods;
+	int			bottomLevelIndexDxr[MD3_MAX_LODS];
 } model_t;
 
 
@@ -1248,7 +1250,7 @@ typedef struct shaderCommands_s
 	color4ub_t	constantColor255[SHADER_MAX_VERTEXES];
 
 	shader_t	*shader;
-  float   shaderTime;
+	float   shaderTime;
 	int			fogNum;
 
 	int			dlightBits;	// or together of all vertexDlightBits
