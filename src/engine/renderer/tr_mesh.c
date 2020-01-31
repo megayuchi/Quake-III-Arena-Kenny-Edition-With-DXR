@@ -335,8 +335,31 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 
 	if (-1 == pModel->bottomLevelIndexDxr[lod] && !personalModel)
 	{
-		pModel->bottomLevelIndexDxr[lod] = drx_AddBottomLevelMesh();
+		if (1 < header->numFrames)
+		{
+			pModel->bottomLevelIndexDxr[lod] = drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::DYNAMIC_MESH);
+		}
+		else
+		{
+			pModel->bottomLevelIndexDxr[lod] = drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::STATIC_MESH);
+		}
+
 		addingToDxr = true;
+	}
+
+	bool animated = false;
+	if (ent->e.oldframe != ent->e.frame) {
+		animated = true;
+	}
+
+	bool updating = !addingToDxr && animated;
+
+	if (!personalModel)
+	{
+		if (updating)
+		{
+			drx_ResetMeshForUpdating(pModel->bottomLevelIndexDxr[lod]);
+		}
 	}
 
 	//
@@ -345,7 +368,6 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 	surface = (md3Surface_t *)((byte *)header + header->ofsSurfaces);
 	for (i = 0; i < header->numSurfaces; i++)
 	{
-
 		if (ent->e.customShader) {
 			shader = R_GetShaderByHandle(ent->e.customShader);
 		}
@@ -405,10 +427,16 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 		{
 			R_AddDrawSurf((surfaceType_t*)(void *)surface, shader, fogNum, qfalse);
 
-			if (addingToDxr)
+			float backlerp = 0.0f;
+
+			if (ent->e.oldframe != ent->e.frame) {
+				backlerp = ent->e.backlerp;
+			}
+
+			if (addingToDxr || updating)
 			{
 				//add drx model
-				unsigned int				*indexes;
+				unsigned int	*indexes;
 				int				numIndexes;
 				int				numVerts;
 
@@ -421,10 +449,10 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 				int		vertNum;
 				unsigned lat, lng;
 
-				float backlerp = 0.0f;
+				int frameNumber = ent->e.frame;
 
 				newXyz = (short *)((byte *)surface + surface->ofsXyzNormals)
-					+ (backEnd.currentEntity->e.frame * surface->numVerts * 4);
+					+ (frameNumber * surface->numVerts * 4);
 				newNormals = newXyz + 3;
 
 				newXyzScale = MD3_XYZ_SCALE * (1.0 - backlerp);
@@ -432,37 +460,105 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 
 				numVerts = surface->numVerts;
 
-				indexes = (unsigned int *)((byte *)surface + surface->ofsTriangles);
-				numIndexes = surface->numTriangles * 3;
-
-				drx_AddBottomLeveIndexesData(indexes, numIndexes);
-
-				for (vertNum = 0; vertNum < numVerts; vertNum++,
-					newXyz += 4, newNormals += 4
-					)
+				if (!updating)
 				{
+					indexes = (unsigned int *)((byte *)surface + surface->ofsTriangles);
+					numIndexes = surface->numTriangles * 3;
 
-					outXyz[0] = newXyz[0] * newXyzScale;
-					outXyz[1] = newXyz[1] * newXyzScale;
-					outXyz[2] = newXyz[2] * newXyzScale;
+					drx_AddBottomLeveIndexesData(indexes, numIndexes);
+				}
 
-					lat = (newNormals[0] >> 8) & 0xff;
-					lng = (newNormals[0] & 0xff);
-					lat *= (FUNCTABLE_SIZE / 256);
-					lng *= (FUNCTABLE_SIZE / 256);
+				if (backlerp == 0)
+				{
+					for (vertNum = 0; vertNum < numVerts; vertNum++,
+						newXyz += 4, newNormals += 4)
+					{
+						outXyz[0] = newXyz[0] * newXyzScale;
+						outXyz[1] = newXyz[1] * newXyzScale;
+						outXyz[2] = newXyz[2] * newXyzScale;
 
-					// decode X as cos( lat ) * sin( long )
-					// decode Y as sin( lat ) * sin( long )
-					// decode Z as cos( long )
+						lat = (newNormals[0] >> 8) & 0xff;
+						lng = (newNormals[0] & 0xff);
+						lat *= (FUNCTABLE_SIZE / 256);
+						lng *= (FUNCTABLE_SIZE / 256);
 
-					outNormal[0] = tr.sinTable[(lat + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK] * tr.sinTable[lng];
-					outNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
-					outNormal[2] = tr.sinTable[(lng + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK];
+						// decode X as cos( lat ) * sin( long )
+						// decode Y as sin( lat ) * sin( long )
+						// decode Z as cos( long )
 
-					drx_AddBottomLevelVertex(outXyz, outNormal);
+						outNormal[0] = tr.sinTable[(lat + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK] * tr.sinTable[lng];
+						outNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
+						outNormal[2] = tr.sinTable[(lng + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK];
+
+						if (updating)
+						{
+							drx_UpdateBottomLevelVertex(pModel->bottomLevelIndexDxr[lod], outXyz, outNormal);
+						}
+						else
+						{
+							drx_AddBottomLevelVertex(outXyz, outNormal);
+						}
+					}
+				}
+				else
+				{
+					//
+					// interpolate and copy the vertex and normal
+					//
+					short	*oldXyz;
+					oldXyz = (short *)((byte *)surface + surface->ofsXyzNormals)
+						+ (ent->e.oldframe * surface->numVerts * 4);
+					short	*oldNormals = oldXyz + 3;
+
+					float oldXyzScale = MD3_XYZ_SCALE * backlerp;
+					float oldNormalScale = backlerp;
+
+					for (vertNum = 0; vertNum < numVerts; vertNum++,
+						oldXyz += 4, newXyz += 4, oldNormals += 4, newNormals += 4)
+					{
+						vec3_t uncompressedOldNormal, uncompressedNewNormal;
+
+						// interpolate the xyz
+						outXyz[0] = oldXyz[0] * oldXyzScale + newXyz[0] * newXyzScale;
+						outXyz[1] = oldXyz[1] * oldXyzScale + newXyz[1] * newXyzScale;
+						outXyz[2] = oldXyz[2] * oldXyzScale + newXyz[2] * newXyzScale;
+
+						// FIXME: interpolate lat/long instead?
+						lat = (newNormals[0] >> 8) & 0xff;
+						lng = (newNormals[0] & 0xff);
+						lat *= 4;
+						lng *= 4;
+						uncompressedNewNormal[0] = tr.sinTable[(lat + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK] * tr.sinTable[lng];
+						uncompressedNewNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
+						uncompressedNewNormal[2] = tr.sinTable[(lng + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK];
+
+						lat = (oldNormals[0] >> 8) & 0xff;
+						lng = (oldNormals[0] & 0xff);
+						lat *= 4;
+						lng *= 4;
+
+						uncompressedOldNormal[0] = tr.sinTable[(lat + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK] * tr.sinTable[lng];
+						uncompressedOldNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
+						uncompressedOldNormal[2] = tr.sinTable[(lng + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK];
+
+						outNormal[0] = uncompressedOldNormal[0] * oldNormalScale + uncompressedNewNormal[0] * newNormalScale;
+						outNormal[1] = uncompressedOldNormal[1] * oldNormalScale + uncompressedNewNormal[1] * newNormalScale;
+						outNormal[2] = uncompressedOldNormal[2] * oldNormalScale + uncompressedNewNormal[2] * newNormalScale;
+
+						VectorNormalize(outNormal);
+
+						if (updating)
+						{
+							drx_UpdateBottomLevelVertex(pModel->bottomLevelIndexDxr[lod], outXyz, outNormal);
+						}
+						else
+						{
+							drx_AddBottomLevelVertex(outXyz, outNormal);
+						}
+					}
 				}
 			}
-		}		
+		}
 
 		surface = (md3Surface_t *)((byte *)surface + surface->ofsEnd);
 	}
@@ -471,6 +567,5 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 	{
 		drx_AddTopLevelIndexWithTransform(pModel->bottomLevelIndexDxr[lod], ent->e.axis, ent->e.origin);
 	}
-
 }
 

@@ -6,6 +6,7 @@
 * If you have a GPU that supports Hardware ray tracing like Nvidia's RTX 20X0 series you can have ray traced Q3A.
 
 ![screenshot](https://github.com/myounglcd/Quake-III-Arena-Kenny-Edition-With-DXR/blob/master/screenshots/q3a-raytraced03.png?raw=true)
+https://www.youtube.com/watch?v=YGofJni1ZHk
 
 ## Caveats
 * This was only done as a learning exercise.

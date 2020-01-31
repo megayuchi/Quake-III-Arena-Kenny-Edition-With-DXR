@@ -332,7 +332,7 @@ void R_AddBrushModelSurfaces(trRefEntity_t *ent) {//MICK moving world stuff: pla
 
 	if (-1 == pModel->bottomLevelIndexDxr[0])
 	{
-		pModel->bottomLevelIndexDxr[0] = drx_AddBottomLevelMesh();
+		pModel->bottomLevelIndexDxr[0] = drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::STATIC_MESH);
 
 		for (i = 0; i < bmodel->numSurfaces; i++)
 		{

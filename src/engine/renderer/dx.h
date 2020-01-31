@@ -4,6 +4,7 @@
 #define ENABLE_DX12
 
 #include <vector>
+#include "dxr_acceleration_structure_manager.h"
 
 
 struct ID3D12CommandAllocator;
@@ -72,17 +73,22 @@ void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t col
 
 void drx_Reset();
 void drx_AddBottomLevelMeshForWorld();
-int drx_AddBottomLevelMesh();
+int drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::meshType_t meshType);
 void drx_AddBottomLevelMeshData(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal);
 
 void drx_AddBottomLeveIndexesData(unsigned *indices, int numIndices);
 void drx_AddBottomLevelIndex(unsigned index);
 void drx_AddBottomLevelVertex(float	*xyz, float* normal);
+void drx_UpdateBottomLevelVertex(int bottomLevelIndex, float *xyz, float* normal);
 
 void drx_AddTopLevelIndex(int bottomLevelIndex);
 void drx_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], float origin[3]);
+void drx_ResetMeshForUpdating(int bottomLevelIndex);
 
 void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal);
+
+UINT dxr_MeshVertexCount(int bottomLevelIndex);
+
 void dx_bind_geometry();
 void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Depth_Range depth_range, bool indexed, bool lines);
 void dx_begin_frame();

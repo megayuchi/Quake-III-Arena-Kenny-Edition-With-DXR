@@ -352,7 +352,8 @@ namespace DXR
 
 		for (int i = 0; i < meshCount; ++i)
 		{
-			if (!drxAsm.IsMeshDirty(i))
+			bool update = drxAsm.IsMeshUpdate(i);
+			if (! (drxAsm.IsMeshDirty(i) || update))
 			{
 				continue;
 			}
@@ -366,6 +367,19 @@ namespace DXR
 				D3D12_RANGE readWriteRange = {};
 				readWriteRange.Begin = d3d.resources->currentVertexBufferMegaCount *  vertexSizeOf;
 				readWriteRange.End = (d3d.resources->currentVertexBufferMegaCount + meshVertexCount) *  vertexSizeOf;
+
+				if (update)
+				{
+					UINT32 pos = drxAsm.GetVertexBufferMegaPos(i);
+					readWriteRange.Begin = pos *  vertexSizeOf;
+					readWriteRange.End = (pos + meshVertexCount) *  vertexSizeOf;
+					assert(readWriteRange.End > readWriteRange.Begin);
+				}
+				else
+				{
+					drxAsm.SetVertexBufferMegaPos(i, d3d.resources->currentVertexBufferMegaCount);
+				}
+				assert(readWriteRange.End > readWriteRange.Begin);
 				assert(readWriteRange.End < MEGA_INDEX_VERTEX_BUFFER_SIZE);
 				HRESULT hr = d3d.resources->vertexBufferMega->Map(0, &readWriteRange, reinterpret_cast<void**>(&pVertexDataBegin));
 				if (FAILED(hr))
@@ -382,6 +396,7 @@ namespace DXR
 			}
 
 			// Create the index buffer resource
+			if (!update)
 			{
 				UINT64 size = drxAsm.MeshIndexCount(i) * sizeof(UINT);
 
@@ -390,6 +405,7 @@ namespace DXR
 				D3D12_RANGE readWriteRange = {};
 				readWriteRange.Begin = d3d.resources->currentIndexBufferMegaCount *  indexSizeOf;
 				readWriteRange.End = (d3d.resources->currentIndexBufferMegaCount + drxAsm.MeshIndexCount(i)) *  indexSizeOf;
+				drxAsm.SetIndexBufferMegaPos(i, d3d.resources->currentIndexBufferMegaCount);
 				assert(readWriteRange.End < MEGA_INDEX_VERTEX_BUFFER_SIZE);
 				HRESULT hr = d3d.resources->indexBufferMega->Map(0, &readWriteRange, reinterpret_cast<void**>(&pIndexDataBegin));
 				if (FAILED(hr))
@@ -407,19 +423,25 @@ namespace DXR
 			D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc;
 
 			geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-
-			geometryDesc.Triangles.VertexBuffer.StartAddress = d3d.resources->vertexBufferMega->GetGPUVirtualAddress() + d3d.resources->currentVertexBufferMegaCount *  vertexSizeOf;
+			UINT32 vertexPos = drxAsm.GetVertexBufferMegaPos(i);
+			geometryDesc.Triangles.VertexBuffer.StartAddress = d3d.resources->vertexBufferMega->GetGPUVirtualAddress() + vertexPos *  vertexSizeOf;
 			geometryDesc.Triangles.VertexBuffer.StrideInBytes = (UINT)vertexSizeOf;
 			geometryDesc.Triangles.VertexCount = drxAsm.MeshVertexCount(i);
 			geometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
 
-			geometryDesc.Triangles.IndexBuffer = d3d.resources->indexBufferMega->GetGPUVirtualAddress() + d3d.resources->currentIndexBufferMegaCount *  indexSizeOf;
+			UINT32 indexPos = drxAsm.GetIndexBufferMegaPos(i);
+			geometryDesc.Triangles.IndexBuffer = d3d.resources->indexBufferMega->GetGPUVirtualAddress() + indexPos *  indexSizeOf;
 			geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
 			geometryDesc.Triangles.IndexCount = drxAsm.MeshIndexCount(i);
 			geometryDesc.Triangles.Transform3x4 = 0;
 			geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 
 			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+
+			if (dxr_acceleration_structure_manager::DYNAMIC_MESH == drxAsm.GetMeshType(i))
+			{
+				buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+			}
 
 			// Get the size requirements for the BLAS buffers
 			D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS ASInputs = {};
@@ -432,26 +454,48 @@ namespace DXR
 			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO ASPreBuildInfo = {};
 			d3d.device->GetRaytracingAccelerationStructurePrebuildInfo(&ASInputs, &ASPreBuildInfo);
 
-			ASPreBuildInfo.ScratchDataSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ScratchDataSizeInBytes);
-			ASPreBuildInfo.ResultDataMaxSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ResultDataMaxSizeInBytes);
+			if (update)
+			{
+				// If this a request for an update, then the BLAS was already used in a DispatchRay() call. We need a UAV barrier to make sure the read operation ends before updating the buffer
+				D3D12_RESOURCE_BARRIER uavBarrier = {};
+				uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+				AccelerationStructureBuffer& BLAS = dxr.BLASs[i];
+				uavBarrier.UAV.pResource = BLAS.pResult;
+				d3d.command_list->ResourceBarrier(1, &uavBarrier);
+			}
+			else
+			{
 
-			AccelerationStructureBuffer BLAS;
+				ASPreBuildInfo.ScratchDataSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ScratchDataSizeInBytes);
+				ASPreBuildInfo.ResultDataMaxSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ResultDataMaxSizeInBytes);
 
-			// Create the BLAS scratch buffer
-			D3D12BufferCreateInfo bufferInfo(ASPreBuildInfo.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-			bufferInfo.alignment = std::max(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT);
-			Create_Buffer(d3d, bufferInfo, &BLAS.pScratch);
+				AccelerationStructureBuffer BLAS;
 
-			// Create the BLAS buffer
-			bufferInfo.size = ASPreBuildInfo.ResultDataMaxSizeInBytes;
-			bufferInfo.state = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-			Create_Buffer(d3d, bufferInfo, &BLAS.pResult);
+				// Create the BLAS scratch buffer
+				D3D12BufferCreateInfo bufferInfo(ASPreBuildInfo.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				bufferInfo.alignment = std::max(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT);
+				Create_Buffer(d3d, bufferInfo, &BLAS.pScratch);
 
+				// Create the BLAS buffer
+				bufferInfo.size = ASPreBuildInfo.ResultDataMaxSizeInBytes;
+				bufferInfo.state = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+				Create_Buffer(d3d, bufferInfo, &BLAS.pResult);
+
+				dxr.BLASs.push_back(BLAS);
+			}
+
+			AccelerationStructureBuffer& BLAS = dxr.BLASs[i];
 			// Describe and build the bottom level acceleration structure
 			D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
 			buildDesc.Inputs = ASInputs;
 			buildDesc.ScratchAccelerationStructureData = BLAS.pScratch->GetGPUVirtualAddress();
 			buildDesc.DestAccelerationStructureData = BLAS.pResult->GetGPUVirtualAddress();
+
+			if (update)
+			{
+				buildDesc.Inputs.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+				buildDesc.SourceAccelerationStructureData = BLAS.pResult->GetGPUVirtualAddress();
+			}
 
 			d3d.command_list->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
 
@@ -461,14 +505,15 @@ namespace DXR
 			uavBarrier.UAV.pResource = BLAS.pResult;
 			uavBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 			d3d.command_list->ResourceBarrier(1, &uavBarrier);
-
-			dxr.BLASs.push_back(BLAS);
-
-			d3d.resources->currentVertexBufferMegaCount += drxAsm.MeshVertexCount(i);
-			d3d.resources->currentIndexBufferMegaCount += drxAsm.MeshIndexCount(i);
+			
+			if (!update)
+			{
+				d3d.resources->currentVertexBufferMegaCount += drxAsm.MeshVertexCount(i);
+				d3d.resources->currentIndexBufferMegaCount += drxAsm.MeshIndexCount(i);
+			}
 		}
 
-		d3d.dxr->acceleration_structure_manager.ClearDirty();
+		drxAsm.ClearDirty();
 	}
 
 	void Create_Top_Level_AS(Dx_Instance &d3d, DXRGlobal &dxr)

@@ -1391,15 +1391,14 @@ void drx_AddBottomLevelMeshForWorld()
 
 	if (drxAsm.MeshCount() <= 0)
 	{
-		drxAsm.AddMesh();
+		drxAsm.AddMesh(dxr_acceleration_structure_manager::STATIC_MESH);
 	}
 }
 
-int drx_AddBottomLevelMesh()
+int drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::meshType_t meshType)
 {
-	//s_dump_geometry_static = s_dump_geometry_staticBuilding;
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-	return drxAsm.AddMesh();
+	return drxAsm.AddMesh(meshType);
 }
 
 void drx_AddBottomLevelMeshData(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal)
@@ -1407,7 +1406,7 @@ void drx_AddBottomLevelMeshData(unsigned *indices, float* points, int numIndices
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
 
 	drxAsm.AddIndexesData(indices, numIndices);
-	drxAsm.AddVertexData(points, normal, numPoints);
+	drxAsm.AddVertexData(points, normal, numPoints, VERTEXSIZE);
 }
 
 void drx_AddBottomLeveIndexesData(unsigned *indices, int numIndices)
@@ -1431,6 +1430,13 @@ void drx_AddBottomLevelVertex(float	*xyz, float* normal)
 	drxAsm.AddVertexData(xyz, normal);
 }
 
+void drx_UpdateBottomLevelVertex(int bottomLevelIndex, float *xyz, float* normal)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	drxAsm.UpdateVertexData(bottomLevelIndex, xyz, normal);
+}
+
 void drx_AddTopLevelIndex(int bottomLevelIndex)
 {
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
@@ -1449,6 +1455,15 @@ void drx_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], flo
 	}
 }
 
+void drx_ResetMeshForUpdating(int bottomLevelIndex)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	if (bottomLevelIndex != -1)
+	{
+		drxAsm.ResetMeshForUpdating(bottomLevelIndex);
+	}
+}
+
 void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal)
 {
 #if defined( ENABLE_DXR)
@@ -1457,11 +1472,21 @@ void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndice
 
 	if (drxAsm.MeshCount() <= 0)
 	{
-		drxAsm.AddMesh();
+		drxAsm.AddMesh(dxr_acceleration_structure_manager::STATIC_MESH);
 	}
 	drxAsm.AddIndexesData(indices, numIndices);
-	drxAsm.AddVertexData(points, normal, numPoints);
+	drxAsm.AddVertexData(points, normal, numPoints, VERTEXSIZE);
 #endif
+}
+
+UINT dxr_MeshVertexCount(int bottomLevelIndex)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+	UINT meshVertexCount = drxAsm.MeshVertexCount(bottomLevelIndex);
+	return meshVertexCount;
+
+
 }
 void dx_bind_geometry()
 {	
