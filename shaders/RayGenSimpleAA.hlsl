@@ -53,49 +53,77 @@ float3 randomHemisphereDir(float3 dir, float i)
 	return v * sign(dot(v, dir));
 }
 
-float ShadowTest(float3 origin, float3 direction)
+uint rand_xorshift(uint rng_state)
 {
-	HitInfo payload;
-	RayDesc rayShadow;
-	rayShadow.Origin = origin;
-	rayShadow.Direction = direction;
-
-	rayShadow.TMin = 0.1f;
-	rayShadow.TMax = 1000.f;
-
-	TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, rayShadow, payload);
-	
-	float inshadow = payload.HitPos.w != 0.0 ? 0.0f : 1.0f;
-
-	return inshadow;
+	// Xorshift algorithm from George Marsaglia's paper
+	rng_state ^= (rng_state << 13);
+	rng_state ^= (rng_state >> 17);
+	rng_state ^= (rng_state << 5);
+	return rng_state;
 }
 
-float pow2(float x)
+uint wang_hash(uint seed)
 {
-	return x * x;
+	seed = (seed ^ 61) ^ (seed >> 16);
+	seed *= 9;
+	seed = seed ^ (seed >> 4);
+	seed *= 0x27d4eb2d;
+	seed = seed ^ (seed >> 15);
+	return seed;
 }
 
-float distanceSq(float3 A, float3 B)
+float3 randomHemisphereDir2(float3 dir, float2 f)
 {
-	return pow2(B.x - A.x) + pow2(B.y - A.y) + pow2(B.z - A.z);
+	float3 v = randomSphereDir(f);
+	return v * sign(dot(v, dir));
 }
 
-float4 doLight(float3 toLight, float3 hitPos, float3 normal, float3 camPos)
+
+
+float DoAA(float3 origin, float3 nor)
 {
-	float lightAngle = dot(toLight, normal);
-	float inshadow = ShadowTest(hitPos, toLight);
+	const int nbIte = 16;
+	const float nbIteInv = 1.0f / float(nbIte);
+	float maxDist = 1.0f;
+	float ao = 0.0;
+	float max = 100.0f;
+	//uint rng_state = wang_hash((uint) origin.x + origin.y*20.0f + origin.z*200.0f);
+	//uint rng_state = wang_hash(( (origin.x*2.0f) + (origin.y*20.0f) + (origin.z*200.0f)));
 
-	//spec
-	float3 viewDir = camPos - hitPos;
-	viewDir = normalize(viewDir);
-	float3 H = normalize(toLight + viewDir);
+	for (int i = 0; i < nbIte; i++)
+	{
+		float l = hash(float(i) + (origin.x + origin.y*200.0f + origin.z*2000.0f)); //Try and make a hash thats "stable" in world space
+		float3 normalBend = normalize(nor + randomHemisphereDir(nor, l));
+/*
+		rng_state = rand_xorshift(rng_state);
+		float f0 = float(rng_state) * (1.0 / 4294967296.0);
+		rng_state = rand_xorshift(rng_state);
+		float f1 = float(rng_state) * (1.0 / 4294967296.0);		
+		float3 normalBend = normalize(nor + randomHemisphereDir2(nor, float2(f0, f1)));
+		*/
+		RayDesc ray;
+		ray.Origin = origin;
+		ray.Direction = normalBend;
+		ray.TMin = 0.001f;
+		ray.TMax = max;		
 
-	float NdotH = dot(normal, H);
-	float spec = pow(saturate(NdotH), 64);
-	
-	float light = (lightAngle + spec) * inshadow;
+		HitInfo shadowPayload;
+		shadowPayload.HitPos.w = max;		
 
-	return float4(light, light, light, 1.0f);
+		TraceRay(SceneBVH,
+			RAY_FLAG_NONE,
+			0xFF,
+			0,
+			0,
+			0,
+			ray, shadowPayload);
+
+		shadowPayload.HitPos.w = shadowPayload.HitPos.w == 0.0f ? max : shadowPayload.HitPos.w;//bit of a hack so I can reuse the same miss shader
+
+		ao += shadowPayload.HitPos.w / max;
+	}
+	float factor = ao * nbIteInv;
+	return factor;
 }
 
 [shader("raygeneration")]
@@ -138,45 +166,45 @@ void RayGen()
 	if (payload.HitPos.w != 0.0f)
 	{
 		float3 toLight = normalize(light.xyz);
-		RTOutput[LaunchIndex.xy] = doLight(toLight, payload.HitPos.xyz, payload.HitNormal.xyz, ray.Origin.xyz);
+		float light = dot(toLight, payload.HitNormal.xyz);
+		light = (light*0.5f) + 0.5f; //Half Lambert. technically not right, but makes this simple lighting model look a little more interesting
 
-		//1st bounce
+		light *= DoAA(payload.HitPos, payload.HitNormal.xyz);
+		
+		RTOutput[LaunchIndex.xy] = float4(light, light, light, 1.0f);		
+		
+		HitInfo payload2;
+		RayDesc rayShadow;
+		rayShadow.Origin = payload.HitPos;
+		rayShadow.Direction = toLight;
+
+		rayShadow.TMin = 0.1f;
+		rayShadow.TMax = 1000.f;
+
+		TraceRay(
+			SceneBVH,
+			RAY_FLAG_NONE,
+			0xFF,
+			0,
+			0,
+			0,
+			rayShadow,
+			payload2);
+
+		float inshadow = payload2.HitPos.w != 0.0 ? 0.0f : 1.0f;
+
+		RTOutput[LaunchIndex.xy] = payload2.HitPos.w != 0.0 ? RTOutput[LaunchIndex.xy] * 0.5f : RTOutput[LaunchIndex.xy];
+
 		{
-			float3 origin = payload.HitPos.xyz;
-			float3 normal = payload.HitNormal.xyz;
-			const int nbIte = 16;
-			const float nbIteInv = 1.0f / float(nbIte);
-			float max = 500.0f;
+			float3 viewDir = ray.Origin.xyz - payload.HitPos.xyz;
+			viewDir = normalize(viewDir);
+			float3 H = normalize(toLight + viewDir);
 
-			for (int i = 0; i < nbIte; i++)
-			{
-				float l = hash(float(i) + (origin.x + origin.y*200.0f + origin.z*2000.0f)); //Try and make a hash thats "stable" in world space
-				float3 normalBend = normalize(normal + randomHemisphereDir(normal, l));
+			float NdotH = dot(payload.HitNormal.xyz, H);
+			RTOutput[LaunchIndex.xy] += inshadow * pow(saturate(NdotH), 64);
 
-				HitInfo payloadBounce;
-				payloadBounce.HitNormal = float4(0.f, 0.f, 0.f, 0.f);
-				RayDesc rayBounce;
-				rayBounce.Origin = payload.HitPos.xyz;
-				rayBounce.Direction = normalBend;
-
-				rayBounce.TMin = 0.1f;
-				rayBounce.TMax = max;
-
-				TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, rayBounce, payloadBounce);
-
-				if (payloadBounce.HitPos.w != 0.0f)
-				{
-					//whats the light at the hit spot
-					float3 origin2 = payloadBounce.HitPos.xyz;
-					float3 normal2 = payloadBounce.HitNormal.xyz;
-					
-					float destSq = distanceSq(origin, origin2);
-					float lightAttenuation = clamp(5000.0f / destSq, 0, 1);
-
-					RTOutput[LaunchIndex.xy] += lightAttenuation * nbIteInv * doLight(toLight, origin2, normal2, ray.Origin.xyz);
-				}				
-			}
 		}
+
 		
 		float displayGamma = 2.2;
 		RTOutput[LaunchIndex.xy].rgb = pow(RTOutput[LaunchIndex.xy].rgb, 1.0 / displayGamma);
