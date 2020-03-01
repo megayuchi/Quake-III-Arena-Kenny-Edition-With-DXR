@@ -288,7 +288,12 @@ void R_RotateForEntity( const trRefEntity_t *ent, const viewParms_t *viewParms,
 	glMatrix[11] = 0;
 	glMatrix[15] = 1;
 
-	myGlMultMatrix( glMatrix, viewParms->world.modelMatrix, or->modelMatrix );
+	myGlMultMatrix( glMatrix, viewParms->world.modelViewMatrix, or->modelViewMatrix );
+
+	for (int i = 0; i < 16; ++i)//MICK
+	{
+		or ->modelMatrix[i] = glMatrix[i];
+	}
 
 	// calculate the viewer origin in the model's space
 	// needed for fog, specular, and environment mapping
@@ -354,7 +359,17 @@ void R_RotateForViewer (void)
 
 	// convert from our coordinate system (looking down X)
 	// to OpenGL's coordinate system (looking down -Z)
-	myGlMultMatrix( viewerMatrix, s_flipMatrix, tr.or.modelMatrix );
+	myGlMultMatrix( viewerMatrix, s_flipMatrix, tr.or.modelViewMatrix );
+	myGlMultMatrix(viewerMatrix, s_flipMatrix, tr. or .viewMatrix);
+	
+
+
+	Com_Memset(&tr.or .modelMatrix, 0, sizeof(tr.or .modelMatrix));
+	tr.or.modelMatrix[0] = 1;
+	tr.or.modelMatrix[5] = 1;
+	tr.or.modelMatrix[10] = 1;
+	tr.or.modelMatrix[15] = 1;
+
 
 	tr.viewParms.world = tr.or;
 
@@ -814,7 +829,7 @@ static qboolean SurfIsOffscreen( const drawSurf_t *drawSurf, vec4_t clipDest[128
 		int j;
 		unsigned int pointFlags = 0;
 
-		R_TransformModelToClip( tess.xyz[i], tr.or.modelMatrix, tr.viewParms.projectionMatrix, eye, clip );
+		R_TransformModelToClip( tess.xyz[i], tr.or.modelViewMatrix, tr.viewParms.projectionMatrix, eye, clip );
 
 		for ( j = 0; j < 3; j++ )
 		{
@@ -1363,9 +1378,9 @@ R_GenerateDrawSurfs
 ====================
 */
 void R_GenerateDrawSurfs( void ) {
-	R_AddWorldSurfaces ();
+	R_AddWorldSurfaces ();//MICK turns world into surfaces
 
-	R_AddPolygonSurfaces();
+	R_AddPolygonSurfaces();//MICK turns polygons like wall marks, player blob shadows into surfaces
 
 	// set the projection matrix with the minimum zfar
 	// now that we have the world bounded
@@ -1374,7 +1389,7 @@ void R_GenerateDrawSurfs( void ) {
 	// matrix for lod calculation
 	R_SetupProjection ();
 
-	R_AddEntitySurfaces ();
+	R_AddEntitySurfaces ();//MICK turns models like weapons, pickups into surfaces
 }
 
 /*

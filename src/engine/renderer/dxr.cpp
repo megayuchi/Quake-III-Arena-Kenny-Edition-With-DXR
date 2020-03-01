@@ -174,6 +174,7 @@ namespace DXR
 		// Create common resources
 		DXR::Create_Descriptor_Heaps(d3d);
 		DXR::Create_Samplers(d3d, *d3d.dxr);
+		DXR::Create_Texture(d3d, *d3d.dxr, world);
 		DXR::Create_View_CB(d3d, *d3d.dxr, world);
 		DXR::Create_Material_CB(d3d, *d3d.dxr, world);
 
@@ -221,6 +222,88 @@ namespace DXR
 	{
 		D3D12BufferCreateInfo bufferInfo((size + 255) & ~255, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
 		Create_Buffer(d3d, bufferInfo, buffer);
+	}
+
+	void Create_Texture(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
+	{
+		HRESULT hr;
+
+		const int width = d3d.width;
+		const int height = d3d.height;
+
+		// Describe the texture
+		D3D12_RESOURCE_DESC textureDesc = {};
+		textureDesc.MipLevels = 1;
+		textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		textureDesc.Width = width;
+		textureDesc.Height = height;
+		textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		textureDesc.DepthOrArraySize = 1;
+		textureDesc.SampleDesc.Count = 1;
+		textureDesc.SampleDesc.Quality = 0;
+		textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+		// Create the texture resource
+		hr = d3d.device->CreateCommittedResource(&DefaultHeapProperties, D3D12_HEAP_FLAG_NONE, &textureDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&world.texture));
+		if (FAILED(hr))
+		{
+			ri.Error(ERR_FATAL, "Error: failed to create texture!");
+		}
+
+		const UINT64 uploadBufferSize = GetRequiredIntermediateSize(world.texture, 0, 1);
+
+		// Describe the resource
+		D3D12_RESOURCE_DESC resourceDesc = {};
+		resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		resourceDesc.Alignment = 0;
+		resourceDesc.Width = uploadBufferSize;
+		resourceDesc.Height = 1;
+		resourceDesc.DepthOrArraySize = 1;
+		resourceDesc.MipLevels = 1;
+		resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+		resourceDesc.SampleDesc.Count = 1;
+		resourceDesc.SampleDesc.Quality = 0;
+		resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+		// Create the upload heap
+		hr = d3d.device->CreateCommittedResource(&UploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&world.textureUploadHeap));
+		if (FAILED(hr))
+		{
+			ri.Error(ERR_FATAL, "Error: failed to create texture upload heap!");
+		}
+
+		UINT8 *pixelData = new UINT8[4 * width * height];
+		for (int x=0; x< width; ++x)
+			for (int y = 0; y < height; ++y)
+			{
+				int i = x + (y * width);
+				pixelData[i*4 + 0] = rand() % 255;
+				pixelData[i * 4 + 1] = rand() % 255;
+				pixelData[i * 4 + 2] = rand() % 255;
+				pixelData[i * 4 + 3] = 255;
+			}
+
+		D3D12_SUBRESOURCE_DATA textureData = {};
+		textureData.pData = pixelData;
+		textureData.RowPitch = width * 4;
+		textureData.SlicePitch = textureData.RowPitch * height;
+
+		// Schedule a copy from the upload heap to the Texture2D resource
+		UpdateSubresources(d3d.command_list, world.texture, world.textureUploadHeap, 0, 0, 1, &textureData);
+
+		// Transition the texture to a shader resource
+		D3D12_RESOURCE_BARRIER barrier = {};
+		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		barrier.Transition.pResource = world.texture;
+		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+
+		d3d.command_list->ResourceBarrier(1, &barrier);
+
+		delete[] pixelData;
 	}
 
 	void Create_Samplers(Dx_Instance &d3d, DXRGlobal &dxr)
@@ -717,7 +800,7 @@ namespace DXR
 		ranges[1].OffsetInDescriptorsFromTableStart = 2;
 
 		ranges[2].BaseShaderRegister = 0; //register(t0);
-		ranges[2].NumDescriptors = 3;
+		ranges[2].NumDescriptors = 4;
 		ranges[2].RegisterSpace = 0; //register(t0,space0)
 		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		ranges[2].OffsetInDescriptorsFromTableStart = 3;
@@ -1109,9 +1192,10 @@ namespace DXR
 
 		// 1 SRV for the index buffer
 		// 1 SRV for the vertex buffer
+		// 1 SRV for the texture
 
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.NumDescriptors = 6;
+		desc.NumDescriptors = 7;
 		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -1187,6 +1271,17 @@ namespace DXR
 
 		handle.ptr += handleIncrement;
 		d3d.device->CreateShaderResourceView(d3d.resources->vertexBufferMega, &vertexSRVDesc, handle);
+
+		// Create the material texture SRV
+		D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
+		textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		textureSRVDesc.Texture2D.MipLevels = 1;
+		textureSRVDesc.Texture2D.MostDetailedMip = 0;
+		textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+		handle.ptr += handleIncrement;
+		d3d.device->CreateShaderResourceView(world.texture, &textureSRVDesc, handle);
 	}
 
 	void Create_DXR_Output(Dx_Instance &d3d)

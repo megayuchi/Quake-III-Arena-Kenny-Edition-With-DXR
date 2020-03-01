@@ -27,22 +27,6 @@
 
 #include "Common.hlsl"
 
-
-/*
-cbuffer <DebugCB> : register(b100, space2)
-{
-	float4 debugColour;
-};*/
-/*
-struct DebugCB
-{
-	float4 debugColour;
-};
-
-ConstantBuffer<DebugCB> debugInfo[] : register(b100, space2);
-*/
-
-
 struct ModelCB
 {
 	uint indexOffSet;

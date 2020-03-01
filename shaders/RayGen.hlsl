@@ -33,6 +33,9 @@
 #define PI 3.14159265359
 //Random number [0:1] without sine
 #define HASHSCALE1 0.1031
+
+#define DISPLAYGAMMA 2.2
+
 float hash(float p)
 {
 	float3 p3 = frac(float3(p, p, p) * HASHSCALE1);
@@ -83,7 +86,12 @@ float distanceSq(float3 A, float3 B)
 float4 doLight(float3 toLight, float3 hitPos, float3 normal, float3 camPos)
 {
 	float lightAngle = dot(toLight, normal);
-	float inshadow = ShadowTest(hitPos, toLight);
+
+	float l = hash((hitPos.x + hitPos.y*200.0f + hitPos.z*2000.0f));
+	float3 toLightBend = normalize(toLight + (0.01f * randomHemisphereDir(toLight, l)));
+	
+
+	float inshadow = ShadowTest(hitPos, toLightBend);
 
 	//spec
 	float3 viewDir = camPos - hitPos;
@@ -135,10 +143,26 @@ void RayGen()
 	LaunchIndex.x = LaunchDimensions.x - LaunchIndex.x;
 	RTOutput[LaunchIndex.xy] = float4(0.0f, 0.0, 0.0f, 1.0f);
 
+	if (0)
+	{
+		payload.HitNormal.w = 1.0f;
+		float4 normal0_1 = (payload.HitNormal + float4(1, 1, 1, 0)) * float4(0.5f, 0.5f, 0.5f, 1);
+		//RTOutput[LaunchIndex.xy] = ;//show normals
+
+		float3 color = albedo.Load(int3(LaunchIndex.xy, 0)).rgb;
+		RTOutput[LaunchIndex.xy] = float4(color, 1.0f);
+	}
+	
 	if (payload.HitPos.w != 0.0f)
 	{
+		float4 texColor = albedo.Load(int3(LaunchIndex.xy, 0)).rgba;
+
+		
+		texColor.rgb = pow(texColor.rgb, DISPLAYGAMMA);
+		
+
 		float3 toLight = normalize(light.xyz);
-		RTOutput[LaunchIndex.xy] = doLight(toLight, payload.HitPos.xyz, payload.HitNormal.xyz, ray.Origin.xyz);
+		RTOutput[LaunchIndex.xy] = texColor * doLight(toLight, payload.HitPos.xyz, payload.HitNormal.xyz, ray.Origin.xyz);
 
 		//1st bounce
 		{
@@ -173,13 +197,11 @@ void RayGen()
 					float destSq = distanceSq(origin, origin2);
 					float lightAttenuation = clamp(5000.0f / destSq, 0, 1);
 
-					RTOutput[LaunchIndex.xy] += lightAttenuation * nbIteInv * doLight(toLight, origin2, normal2, ray.Origin.xyz);
+					RTOutput[LaunchIndex.xy] += texColor * lightAttenuation * nbIteInv * doLight(toLight, origin2, normal2, ray.Origin.xyz);
 				}				
 			}
 		}
-		
-		float displayGamma = 2.2;
-		RTOutput[LaunchIndex.xy].rgb = pow(RTOutput[LaunchIndex.xy].rgb, 1.0 / displayGamma);
+		RTOutput[LaunchIndex.xy].rgb = pow(RTOutput[LaunchIndex.xy].rgb, 1.0 / DISPLAYGAMMA);
 	}	
 
 	//output green dots at the sky box, just used to make sure my raygen shader is getting called

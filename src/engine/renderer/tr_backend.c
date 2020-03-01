@@ -585,14 +585,15 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs) {
 				R_TransformDlights(backEnd.refdef.num_dlights, backEnd.refdef.dlights, &backEnd. or );
 			}
 
-			qglLoadMatrixf(backEnd. or .modelMatrix);
+			qglLoadMatrixf(backEnd. or .modelViewMatrix);
 			
 
 			// VULKAN
-			Com_Memcpy(vk_world.modelview_transform, backEnd. or .modelMatrix, 64);
+			Com_Memcpy(vk_world.modelview_transform, backEnd.or.modelViewMatrix, 64);
 
 			// DX12
-			Com_Memcpy(dx_world.modelview_transform, backEnd. or .modelMatrix, 64);			
+			Com_Memcpy(dx_world.modelview_transform, backEnd.or.modelViewMatrix, 64);			
+			Com_Memcpy(dx_world.model_transform, backEnd. or .modelMatrix, 64);
 
 			//
 			// change depthrange if needed
@@ -622,13 +623,14 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs) {
 	}
 
 	// go back to the world modelview matrix
-	qglLoadMatrixf(backEnd.viewParms.world.modelMatrix);
+	qglLoadMatrixf(backEnd.viewParms.world.modelViewMatrix);
 
 	// VULKAN
 	Com_Memcpy(vk_world.modelview_transform, backEnd.viewParms.world.modelMatrix, 64);
 
 	// DX12
-	Com_Memcpy(dx_world.modelview_transform, backEnd.viewParms.world.modelMatrix, 64);
+	Com_Memcpy(dx_world.modelview_transform, backEnd.viewParms.world.modelViewMatrix, 64);
+	Com_Memcpy(dx_world.model_transform, backEnd.viewParms.world.modelMatrix, 64);
 
 	if (depthRange) {
 		qglDepthRange(0, 1);

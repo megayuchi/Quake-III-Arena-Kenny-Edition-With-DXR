@@ -40,6 +40,11 @@ cbuffer ViewCB : register(b0)
 	float4 light;
 	float2 resolution;
 };
+/*
+cbuffer MaterialCB : register(b1)
+{
+	float4 textureResolution;
+};*/
 
 RWTexture2D<float4> RTOutput				: register(u0);
 RaytracingAccelerationStructure SceneBVH	: register(t0, space0);

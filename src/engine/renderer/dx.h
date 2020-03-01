@@ -21,6 +21,8 @@ struct ID3D12_ROOT_SIGNATURE_DESC;
 struct D3D12_ROOT_SIGNATURE_DESC;
 struct ID3D12DescriptorHeap;
 
+class dx_renderTargets;
+
 //DRX
 struct D3D12ShaderCompilerInfo;
 struct DXRGlobal;
@@ -28,7 +30,7 @@ struct D3D12Resources;
 struct ViewCB;
 struct MaterialCB;
 
-constexpr int SWAPCHAIN_BUFFER_COUNT = 2;
+//constexpr int SWAPCHAIN_BUFFER_COUNT = 2;
 
 enum Dx_Sampler_Index {
 	SAMPLER_MIP_REPEAT,
@@ -38,16 +40,18 @@ enum Dx_Sampler_Index {
 	SAMPLER_COUNT
 };
 
+
+struct Dx_Image {
+	ID3D12Resource* texture = nullptr;
+	Dx_Sampler_Index sampler_index = SAMPLER_COUNT;
+};
+
 enum Dx_Image_Format {
 	IMAGE_FORMAT_RGBA8,
 	IMAGE_FORMAT_BGRA4,
 	IMAGE_FORMAT_BGR5A1
 };
 
-struct Dx_Image {
-	ID3D12Resource* texture = nullptr;
-	Dx_Sampler_Index sampler_index = SAMPLER_COUNT;
-};
 
 //
 // Initialization.
@@ -61,9 +65,11 @@ void dx_wait_device_idle();
 //
 // Resources allocation.
 //
-Dx_Image dx_create_image(int width, int height, Dx_Image_Format format, int mip_levels,  bool repeat_texture, int image_index);
+
+Dx_Image dx_create_image(int width, int height, Dx_Image_Format format, int mip_levels, bool repeat_texture, int image_index);
 void dx_upload_image_data(ID3D12Resource* texture, int width, int height, int mip_levels, const uint8_t* pixels, int bytes_per_pixel);
 void dx_create_sampler_descriptor(const Vk_Sampler_Def& def, Dx_Sampler_Index sampler_index);
+
 ID3D12PipelineState* dx_find_pipeline(const Vk_Pipeline_Def& def);
 
 //
@@ -111,11 +117,13 @@ struct Dx_Instance
 	UINT64 fence_value = 0;
 	HANDLE fence_event = NULL;
 
+	/*
 	ID3D12Resource* render_targets[SWAPCHAIN_BUFFER_COUNT];
 	ID3D12Resource* depth_stencil_buffer = nullptr;
+	*/
 
 	ID3D12RootSignature* root_signature = nullptr;
-
+	/*
 	//
 	// Descriptor heaps.
 	//
@@ -129,6 +137,7 @@ struct Dx_Instance
 
 	ID3D12DescriptorHeap* sampler_heap = nullptr;
 	UINT sampler_descriptor_size = 0;
+	*/
 
 	//
 	// Geometry buffers.
@@ -170,6 +179,8 @@ struct Dx_Instance
 	ID3D12PipelineState* surface_debug_pipeline_outline = nullptr;
 	ID3D12PipelineState* images_debug_pipeline = nullptr;
 
+	dx_renderTargets* dx_renderTargets = nullptr;
+
 	//DXR
 	bool dxr_initialized{ false };
 	D3D12ShaderCompilerInfo* shaderCompiler;
@@ -201,6 +212,8 @@ struct Dx_World {
 	//
 	int current_image_indices[2];
 	float modelview_transform[16];
+	float model_transform[16];
+	float view_transform[16];
 	vec3_t		viewOrg;
 	vec3_t		viewaxisForword;
 	vec2_t		viewFov;
@@ -214,4 +227,7 @@ struct Dx_World {
 	ID3D12Resource*									materialCB;
 	MaterialCB*										materialCBData;
 	UINT8*											materialCBStart;
+
+	ID3D12Resource*									texture;
+	ID3D12Resource*									textureUploadHeap;
 };
