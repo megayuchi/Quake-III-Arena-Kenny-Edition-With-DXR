@@ -97,6 +97,7 @@ void dx_renderTargets::CreateDescriptors()
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = rtv_heap->GetCPUDescriptorHandleForHeapStart();
 		for (int i = 0; i < SWAPCHAIN_BUFFER_COUNT; i++) {
 			mDevice->CreateRenderTargetView(render_targets[i], nullptr, rtv_handle);
+			mBackBuffer_rtv_handles[i] = rtv_handle;
 			rtv_handle.ptr += rtv_descriptor_size;
 		}
 	}

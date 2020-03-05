@@ -117,27 +117,7 @@ struct Dx_Instance
 	UINT64 fence_value = 0;
 	HANDLE fence_event = NULL;
 
-	/*
-	ID3D12Resource* render_targets[SWAPCHAIN_BUFFER_COUNT];
-	ID3D12Resource* depth_stencil_buffer = nullptr;
-	*/
-
-	ID3D12RootSignature* root_signature = nullptr;
-	/*
-	//
-	// Descriptor heaps.
-	//
-	ID3D12DescriptorHeap* rtv_heap = nullptr;
-	UINT rtv_descriptor_size = 0;
-
-	ID3D12DescriptorHeap* dsv_heap = nullptr;
-
-	ID3D12DescriptorHeap* srv_heap = nullptr;
-	UINT srv_descriptor_size = 0;
-
-	ID3D12DescriptorHeap* sampler_heap = nullptr;
-	UINT sampler_descriptor_size = 0;
-	*/
+	ID3D12RootSignature* root_signature = nullptr;	
 
 	//
 	// Geometry buffers.
@@ -186,7 +166,7 @@ struct Dx_Instance
 	D3D12ShaderCompilerInfo* shaderCompiler;
 
 	ID3D12DescriptorHeap* cbvSrvUavRayGenHeaps;
-	ID3D12DescriptorHeap* samplerHeap;
+	//ID3D12DescriptorHeap* samplerHeap;
 
 	int width;
 	int height;

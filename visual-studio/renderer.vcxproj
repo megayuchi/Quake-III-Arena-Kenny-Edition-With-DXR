@@ -98,6 +98,8 @@
     <ClCompile Include="..\src\engine\renderer\dx.cpp" />
     <ClCompile Include="..\src\engine\renderer\dxr.cpp" />
     <ClCompile Include="..\src\engine\renderer\dxr_acceleration_structure_manager.cpp" />
+    <ClCompile Include="..\src\engine\renderer\dx_renderTargets.cpp" />
+    <ClCompile Include="..\src\engine\renderer\dx_shaders.cpp" />
     <ClCompile Include="..\src\engine\renderer\shaders\hlsl_compiled\multi_texture_add_ge80_ps.cpp" />
     <ClCompile Include="..\src\engine\renderer\shaders\hlsl_compiled\multi_texture_add_gt0_ps.cpp" />
     <ClCompile Include="..\src\engine\renderer\shaders\hlsl_compiled\multi_texture_add_lt80_ps.cpp" />
@@ -153,6 +155,8 @@
     <ClInclude Include="..\src\engine\renderer\dx.h" />
     <ClInclude Include="..\src\engine\renderer\dxr.h" />
     <ClInclude Include="..\src\engine\renderer\dxr_acceleration_structure_manager.h" />
+    <ClInclude Include="..\src\engine\renderer\dx_renderTargets.h" />
+    <ClInclude Include="..\src\engine\renderer\dx_shaders.h" />
     <ClInclude Include="..\src\engine\renderer\vk.h" />
     <ClInclude Include="..\src\game\q_shared.h" />
     <ClInclude Include="..\src\engine\qcommon\qcommon.h" />
@@ -165,6 +169,6 @@
     <ClInclude Include="..\src\engine\platform\win_local.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">    
-  </ImportGroup>  
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
 </Project>

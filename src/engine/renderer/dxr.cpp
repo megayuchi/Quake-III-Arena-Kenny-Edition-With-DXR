@@ -5,6 +5,7 @@
 
 #include "dx.h"
 #include "dxr.h"
+#include "dx_shaders.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN			// Exclude rarely-used items from Windows headers.
@@ -52,103 +53,6 @@ void Create_Buffer(Dx_Instance &d3d, D3D12BufferCreateInfo& info, ID3D12Resource
 	}
 }
 
-namespace D3DShaders
-{
-	void Compile_Shader(D3D12ShaderCompilerInfo &compilerInfo, D3D12ShaderInfo &info, IDxcBlob** blob)
-	{
-		HRESULT hr;
-		UINT32 codePage(0);
-		IDxcBlobEncoding* pShaderText(nullptr);
-
-		// Load and encode the shader file
-		hr = compilerInfo.library->CreateBlobFromFile(info.filename, &codePage, &pShaderText);
-
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Error: failed to create blob from shader file!");
-		}
-
-		// Create the compiler include handler
-		CComPtr<IDxcIncludeHandler> dxcIncludeHandler;
-		hr = compilerInfo.library->CreateIncludeHandler(&dxcIncludeHandler);
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Error: failed to create include handler");
-		}
-
-		// Compile the shader
-		IDxcOperationResult* result;
-		hr = compilerInfo.compiler->Compile(pShaderText, info.filename, L"", info.targetProfile, nullptr, 0, nullptr, 0, dxcIncludeHandler, &result);
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Error: failed to compile shader!");
-		}
-
-		// Verify the result
-		result->GetStatus(&hr);
-		if (FAILED(hr))
-		{
-			IDxcBlobEncoding* error;
-			hr = result->GetErrorBuffer(&error);
-			if (FAILED(hr))
-			{
-				ri.Error(ERR_FATAL, "Error: failed to get shader compiler error buffer!");
-			}
-
-			// Convert error blob to a string
-			std::vector<char> infoLog(error->GetBufferSize() + 1);
-			memcpy(infoLog.data(), error->GetBufferPointer(), error->GetBufferSize());
-			infoLog[error->GetBufferSize()] = 0;
-
-			std::string errorMsg = "Shader Compiler Error:\n";
-			errorMsg.append(infoLog.data());
-
-			MessageBoxA(nullptr, errorMsg.c_str(), "Error!", MB_OK);
-			return;
-		}
-
-		hr = result->GetResult(blob);
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Error: failed to get shader blob result!");
-		}
-	}
-
-	void Compile_Shader(D3D12ShaderCompilerInfo &compilerInfo, RtProgram &program)
-	{
-		Compile_Shader(compilerInfo, program.info, &program.blob);
-		program.SetBytecode();
-	}
-
-	void Init_Shader_Compiler(D3D12ShaderCompilerInfo &shaderCompiler)
-	{
-		HRESULT hr = shaderCompiler.DxcDllHelper.Initialize();
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Failed to initialize DxCDllSupport!");
-		}
-
-		hr = shaderCompiler.DxcDllHelper.CreateInstance(CLSID_DxcCompiler, &shaderCompiler.compiler);
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Failed to create DxcCompiler!");
-		}
-
-		hr = shaderCompiler.DxcDllHelper.CreateInstance(CLSID_DxcLibrary, &shaderCompiler.library);
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Failed to create DxcLibrary!");
-		}
-	}
-
-	void Destroy(D3D12ShaderCompilerInfo &shaderCompiler)
-	{
-		SAFE_RELEASE(shaderCompiler.compiler);
-		SAFE_RELEASE(shaderCompiler.library);
-		shaderCompiler.DxcDllHelper.Cleanup();
-	}
-}
-
 namespace DXR
 {
 	void SetupDXR(Dx_Instance &d3d, Dx_World &world, int vidWidth, int vidHeight)
@@ -172,8 +76,6 @@ namespace DXR
 		Init_Shader_Compiler(*d3d.shaderCompiler);
 
 		// Create common resources
-		DXR::Create_Descriptor_Heaps(d3d);
-		DXR::Create_Samplers(d3d, *d3d.dxr);
 		DXR::Create_Texture(d3d, *d3d.dxr, world);
 		DXR::Create_View_CB(d3d, *d3d.dxr, world);
 		DXR::Create_Material_CB(d3d, *d3d.dxr, world);
@@ -306,28 +208,6 @@ namespace DXR
 		delete[] pixelData;
 	}
 
-	void Create_Samplers(Dx_Instance &d3d, DXRGlobal &dxr)
-	{
-		// Get the sampler descriptor heap handle
-
-		D3D12_CPU_DESCRIPTOR_HANDLE handle = d3d.samplerHeap->GetCPUDescriptorHandleForHeapStart();
-
-		// Describe the sampler
-		D3D12_SAMPLER_DESC desc = {};
-		memset(&desc, 0, sizeof(desc));
-		desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-		desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		desc.MipLODBias = 0.f;
-		desc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		desc.MinLOD = 0.f;
-		desc.MaxLOD = D3D12_FLOAT32_MAX;
-		desc.MaxAnisotropy = 1;
-
-		// Create the sampler
-		d3d.device->CreateSampler(&desc, handle);
-	}
 
 	void Create_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
@@ -355,22 +235,6 @@ namespace DXR
 		}
 
 		memcpy(world.materialCBStart, world.materialCBData, sizeof(world.materialCBData));
-	}
-
-	void Create_Descriptor_Heaps(Dx_Instance &d3d)
-	{
-		// Describe the sampler heap
-		D3D12_DESCRIPTOR_HEAP_DESC samplerDesc = {};
-		samplerDesc.NumDescriptors = 1;
-		samplerDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-		samplerDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-
-		// Create the sampler heap
-		HRESULT hr = d3d.device->CreateDescriptorHeap(&samplerDesc, IID_PPV_ARGS(&d3d.samplerHeap));
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Error: failed to create sampler descriptor heap!");
-		}
 	}
 
 	void Update_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)

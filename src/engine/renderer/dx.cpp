@@ -231,143 +231,17 @@ void dx_initialize()
 	//
 	// Create descriptor heaps.
 	//
-	{
-		dx.dx_renderTargets->CreateDescriptorHeaps();
-		/*
-		// RTV heap.
-		{
-			D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
-			heap_desc.NumDescriptors = SWAPCHAIN_BUFFER_COUNT;
-			heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-			heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-			heap_desc.NodeMask = 0;
-			DX_CHECK(dx.device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&dx.rtv_heap)));
-			dx.rtv_descriptor_size = dx.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		}
-
-		// DSV heap.
-		{
-			D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
-			heap_desc.NumDescriptors = 1;
-			heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-			heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-			heap_desc.NodeMask = 0;
-			DX_CHECK(dx.device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&dx.dsv_heap)));
-		}
-
-		// SRV heap.
-		{
-			D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
-			heap_desc.NumDescriptors = MAX_DRAWIMAGES;
-			heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-			heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-			heap_desc.NodeMask = 0;
-			DX_CHECK(dx.device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&dx.srv_heap)));
-			dx.srv_descriptor_size = dx.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		}
-
-		// Sampler heap.
-		{
-			D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
-			heap_desc.NumDescriptors = SAMPLER_COUNT;
-			heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-			heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-			heap_desc.NodeMask = 0;
-			DX_CHECK(dx.device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&dx.sampler_heap)));
-			dx.sampler_descriptor_size = dx.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-		}*/
-	}
+	dx.dx_renderTargets->CreateDescriptorHeaps();
 
 	//
 	// Create descriptors.
 	//
-	{
-		dx.dx_renderTargets->CreateDescriptors();
-#if 0
-		// RTV descriptors.
-		{
-			D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.rtv_heap->GetCPUDescriptorHandleForHeapStart();
-			for (int i = 0; i < SWAPCHAIN_BUFFER_COUNT; i++) {
-				dx.device->CreateRenderTargetView(dx.render_targets[i], nullptr, rtv_handle);
-				rtv_handle.ptr += dx.rtv_descriptor_size;
-			}
-		}
-
-		// Samplers.
-		{
-			{
-				Vk_Sampler_Def def;
-				def.repeat_texture = true;
-				def.gl_mag_filter = gl_filter_max;
-				def.gl_min_filter = gl_filter_min;
-				dx_create_sampler_descriptor(def, SAMPLER_MIP_REPEAT);
-			}
-			{
-				Vk_Sampler_Def def;
-				def.repeat_texture = false;
-				def.gl_mag_filter = gl_filter_max;
-				def.gl_min_filter = gl_filter_min;
-				dx_create_sampler_descriptor(def, SAMPLER_MIP_CLAMP);
-			}
-			{
-				Vk_Sampler_Def def;
-				def.repeat_texture = true;
-				def.gl_mag_filter = GL_LINEAR;
-				def.gl_min_filter = GL_LINEAR;
-				dx_create_sampler_descriptor(def, SAMPLER_NOMIP_REPEAT);
-			}
-			{
-				Vk_Sampler_Def def;
-				def.repeat_texture = false;
-				def.gl_mag_filter = GL_LINEAR;
-				def.gl_min_filter = GL_LINEAR;
-				dx_create_sampler_descriptor(def, SAMPLER_NOMIP_CLAMP);
-			}
-		}
-#endif
-	}
+	dx.dx_renderTargets->CreateDescriptors();
 
 	//
 	// Create depth buffer resources.
 	//
-	{
-		dx.dx_renderTargets->CreateDepthBufferResources();
-#if 0
-		D3D12_RESOURCE_DESC depth_desc{};
-		depth_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		depth_desc.Alignment = 0;
-		depth_desc.Width = glConfig.vidWidth;
-		depth_desc.Height = glConfig.vidHeight;
-		depth_desc.DepthOrArraySize = 1;
-		depth_desc.MipLevels = 1;
-		depth_desc.Format = get_depth_format();
-		depth_desc.SampleDesc.Count = 1;
-		depth_desc.SampleDesc.Quality = 0;
-		depth_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		depth_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-		D3D12_CLEAR_VALUE optimized_clear_value{};
-		optimized_clear_value.Format = get_depth_format();
-		optimized_clear_value.DepthStencil.Depth = 1.0f;
-		optimized_clear_value.DepthStencil.Stencil = 0;
-
-		DX_CHECK(dx.device->CreateCommittedResource(
-			&get_heap_properties(D3D12_HEAP_TYPE_DEFAULT),
-			D3D12_HEAP_FLAG_NONE,
-			&depth_desc,
-			D3D12_RESOURCE_STATE_DEPTH_WRITE,
-			&optimized_clear_value,
-			IID_PPV_ARGS(&dx.depth_stencil_buffer)));
-
-		D3D12_DEPTH_STENCIL_VIEW_DESC view_desc{};
-		view_desc.Format = get_depth_format();
-		view_desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-		view_desc.Flags = D3D12_DSV_FLAG_NONE;
-
-		dx.device->CreateDepthStencilView(dx.depth_stencil_buffer, &view_desc,
-			dx.dsv_heap->GetCPUDescriptorHandleForHeapStart());
-#endif
-	}
+	dx.dx_renderTargets->CreateDepthBufferResources();
 
 	//
 	// Create root signature.
@@ -1161,8 +1035,10 @@ void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t col
 	}
 
 	if (clear_color) {
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->rtv_heap->GetCPUDescriptorHandleForHeapStart();
-		rtv_handle.ptr += dx.frame_index * dx.dx_renderTargets->rtv_descriptor_size;
+		/*D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->rtv_heap->GetCPUDescriptorHandleForHeapStart();
+		rtv_handle.ptr += dx.frame_index * dx.dx_renderTargets->rtv_descriptor_size;*/
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->GetBackBuffer_rtv_handles(dx.frame_index);
 		dx.command_list->ClearRenderTargetView(rtv_handle, color, 1, &clear_rect);
 	}
 }
@@ -1428,26 +1304,24 @@ void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Dept
 	{
 		int textureIndex = dx_world.current_image_indices[0];
 
-		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.dx_renderTargets->srv_heap->GetGPUDescriptorHandleForHeapStart();
-		srv_handle.ptr += dx.dx_renderTargets->srv_descriptor_size * textureIndex;
+		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.dx_renderTargets->GetSrvHandle(textureIndex);
 		dx.command_list->SetGraphicsRootDescriptorTable(1, srv_handle);
+		
+		const Dx_Sampler_Index sampler_index = dx_world.images[textureIndex].sampler_index;
+		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.dx_renderTargets->GetSamplerHandle(sampler_index);
 
-		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.dx_renderTargets->sampler_heap->GetGPUDescriptorHandleForHeapStart();
-		const int sampler_index = dx_world.images[textureIndex].sampler_index;
-		sampler_handle.ptr += dx.dx_renderTargets->sampler_descriptor_size * sampler_index;
 		dx.command_list->SetGraphicsRootDescriptorTable(2, sampler_handle);
 	}
 
 	if (multitexture)
 	{
 		int textureIndex = dx_world.current_image_indices[1];
-		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.dx_renderTargets->srv_heap->GetGPUDescriptorHandleForHeapStart();
-		srv_handle.ptr += dx.dx_renderTargets->srv_descriptor_size * textureIndex;
+		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.dx_renderTargets->GetSrvHandle(textureIndex);
 		dx.command_list->SetGraphicsRootDescriptorTable(3, srv_handle);
+		
+		const Dx_Sampler_Index sampler_index = dx_world.images[textureIndex].sampler_index;
+		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.dx_renderTargets->GetSamplerHandle(sampler_index);
 
-		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.dx_renderTargets->sampler_heap->GetGPUDescriptorHandleForHeapStart();
-		const int sampler_index = dx_world.images[textureIndex].sampler_index;
-		sampler_handle.ptr += dx.dx_renderTargets->sampler_descriptor_size * sampler_index;
 		dx.command_list->SetGraphicsRootDescriptorTable(4, sampler_handle);
 	}
 
@@ -1495,17 +1369,21 @@ void SetupTagets()
 
 	}
 	else*/
+
+
 	{
-		ID3D12DescriptorHeap* heaps[] = { dx.dx_renderTargets->srv_heap, dx.dx_renderTargets->sampler_heap };
+
+		ID3D12DescriptorHeap* samplerHeap = dx.dx_renderTargets->GetSamplerHeap();
+		ID3D12DescriptorHeap* srv_heap = dx.dx_renderTargets->GetSrvHeap();		
+		
+		ID3D12DescriptorHeap* heaps[] = { srv_heap, samplerHeap };
 		dx.command_list->SetDescriptorHeaps(_countof(heaps), heaps);
 
-		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.dx_renderTargets->render_targets[dx.frame_index],
+		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.dx_renderTargets->GetBackBufferRenderTarget(dx.frame_index),
 			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
 		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->dsv_heap->GetCPUDescriptorHandleForHeapStart();
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->rtv_heap->GetCPUDescriptorHandleForHeapStart();
-
-		rtv_handle.ptr += dx.frame_index * dx.dx_renderTargets->rtv_descriptor_size;
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->GetBackBuffer_rtv_handles(dx.frame_index);
 
 		dx.command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, &dsv_handle);
 	}
@@ -1577,7 +1455,7 @@ void dx_end_frame() {
 
 		//use forword buffer as a texture
 
-
+		/*
 		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx_world.texture,
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST));	
 
@@ -1589,7 +1467,7 @@ void dx_end_frame() {
 		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx_world.texture,
 			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 
-
+		*/
 
 
 		DXR::UpdateAccelerationStructures(dx, *dx.dxr, dx_world);

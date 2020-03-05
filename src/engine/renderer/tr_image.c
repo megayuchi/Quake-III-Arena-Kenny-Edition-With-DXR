@@ -158,7 +158,7 @@ void GL_TextureMode( const char *string ) {
 
 	// DX12
 	if (dx.active) {
-		dx_wait_device_idle();
+		/*dx_wait_device_idle();
 
 		Vk_Sampler_Def def;
 		def.gl_mag_filter = gl_filter_max;
@@ -168,7 +168,7 @@ void GL_TextureMode( const char *string ) {
 		dx_create_sampler_descriptor(def, SAMPLER_MIP_REPEAT);
 
 		def.repeat_texture = false;
-		dx_create_sampler_descriptor(def, SAMPLER_MIP_CLAMP);
+		dx_create_sampler_descriptor(def, SAMPLER_MIP_CLAMP);*/
 	}
 }
 

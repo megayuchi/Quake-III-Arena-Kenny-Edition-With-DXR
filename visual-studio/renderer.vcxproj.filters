@@ -167,6 +167,18 @@
     <ClCompile Include="..\src\engine\renderer\shaders\hlsl_compiled\single_texture_lt80_ps.cpp">
       <Filter>Source Files\hlsl_compiled</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dxr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dxr_acceleration_structure_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dx_shaders.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dx_renderTargets.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\engine\qcommon\cm_public.h">
@@ -203,6 +215,18 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\engine\renderer\dx.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dxr.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dxr_acceleration_structure_manager.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dx_shaders.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dx_renderTargets.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -240,13 +240,6 @@ struct DXRGlobal
 
 void Create_Buffer(Dx_Instance &d3d, D3D12BufferCreateInfo& info, ID3D12Resource** ppResource);
 
-namespace D3DShaders
-{
-	void Init_Shader_Compiler(D3D12ShaderCompilerInfo &shaderCompiler);
-	void Compile_Shader(D3D12ShaderCompilerInfo &compilerInfo, RtProgram &program);
-	void Compile_Shader(D3D12ShaderCompilerInfo &compilerInfo, D3D12ShaderInfo &info, IDxcBlob** blob);
-	void Destroy(D3D12ShaderCompilerInfo &shaderCompiler);
-}
 
 namespace DXR
 {
@@ -256,10 +249,8 @@ namespace DXR
 
 	void Create_Constant_Buffer(Dx_Instance &d3d, ID3D12Resource** buffer, UINT64 size);
 	void Create_Texture(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
-	void Create_Samplers(Dx_Instance &d3d, DXRGlobal &dxr);
 	void Create_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 	void Create_Material_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
-	void Create_Descriptor_Heaps(Dx_Instance &d3d);
 
 	void Update_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 
