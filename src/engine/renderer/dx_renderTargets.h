@@ -20,8 +20,10 @@ public:
 	static DXGI_FORMAT get_depth_format();
 
 	void CreateDescriptorHeaps();
-	void CreateDescriptors();
+	void CreateDescriptors();	
 	void CreateDepthBufferResources();
+
+	void CreateRenderTargets(const int width, const int height);
 
 	Dx_Image CreateImage(int width, int height, Dx_Image_Format format, int mip_levels, bool repeat_texture, int image_index);
 	void UploadImageData(ID3D12Resource* texture, int width, int height, int mip_levels, const uint8_t* pixels, int bytes_per_pixel);
@@ -37,6 +39,11 @@ public:
 	{
 		assert(frame_index < SWAPCHAIN_BUFFER_COUNT);
 		return mBackBuffer_rtv_handles[frame_index];
+	}
+
+	D3D12_CPU_DESCRIPTOR_HANDLE GetBackBuffer_dsv_handle()
+	{
+		return dx.dx_renderTargets->dsv_heap->GetCPUDescriptorHandleForHeapStart();
 	}
 	
 	D3D12_GPU_DESCRIPTOR_HANDLE GetSamplerHandle(Dx_Sampler_Index index)
@@ -73,12 +80,14 @@ public:
 
 	D3D12_CPU_DESCRIPTOR_HANDLE mBackBuffer_rtv_handles[SWAPCHAIN_BUFFER_COUNT];
 
+	
+
+private:
+
 	//
 	// Descriptor heaps.
 	//
 	ID3D12DescriptorHeap* dsv_heap = (nullptr);	// depth-stencil view.
-
-private:
 
 	ID3D12DescriptorHeap* rtv_heap = (nullptr);//render-target view.
 	UINT rtv_descriptor_size = (0);
@@ -89,6 +98,16 @@ private:
 	ID3D12DescriptorHeap* sampler_heap = (nullptr);//Dx_Sampler_Index
 	UINT sampler_descriptor_size = (0);
 
+
+public:
+	//render targets
+	ID3D12Resource*									mRenderTargetTexture;
+	ID3D12Resource*									mRenderTargetTextureUploadHeap;
+
+	D3D12_CPU_DESCRIPTOR_HANDLE mRenderTargetTexture_handle;
+	D3D12_RESOURCE_STATES mRenderTargetTextureCurrentState;
+
+	D3D12_RESOURCE_BARRIER SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState);
 
 };
 

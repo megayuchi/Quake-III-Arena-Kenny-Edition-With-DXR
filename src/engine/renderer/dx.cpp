@@ -107,10 +107,6 @@ D3D12_RESOURCE_BARRIER get_transition_barrier(
 	return barrier;
 }
 
-
-
-
-
 ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def);
 
 void dx_initialize()
@@ -233,6 +229,8 @@ void dx_initialize()
 	//
 	dx.dx_renderTargets->CreateDescriptorHeaps();
 
+	
+
 	//
 	// Create descriptors.
 	//
@@ -242,6 +240,8 @@ void dx_initialize()
 	// Create depth buffer resources.
 	//
 	dx.dx_renderTargets->CreateDepthBufferResources();
+
+	dx.dx_renderTargets->CreateRenderTargets(glConfig.vidWidth, glConfig.vidHeight);
 
 	//
 	// Create root signature.
@@ -1029,8 +1029,8 @@ void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t col
 		D3D12_CLEAR_FLAGS flags = D3D12_CLEAR_FLAG_DEPTH;
 		if (r_shadows->integer == 2)
 			flags |= D3D12_CLEAR_FLAG_STENCIL;
-
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->dsv_heap->GetCPUDescriptorHandleForHeapStart();
+		
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle();
 		dx.command_list->ClearDepthStencilView(dsv_handle, flags, 1.0f, 0, 1, &clear_rect);
 	}
 
@@ -1352,37 +1352,35 @@ void SetupTagets()
 	static cvar_t*	dxr_on = ri.Cvar_Get("dxr_on", "0", 0);
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
 
-	/*if (dxr_on->value && drxAsm.MeshCount() > 0)
+	if (dxr_on->value && drxAsm.MeshCount() > 0)
 	{
-		ID3D12DescriptorHeap* heaps[] = { dx.srv_heap, dx.sampler_heap };
+		ID3D12DescriptorHeap* samplerHeap = dx.dx_renderTargets->GetSamplerHeap();
+		ID3D12DescriptorHeap* srv_heap = dx.dx_renderTargets->GetSrvHeap();
+
+		ID3D12DescriptorHeap* heaps[] = { srv_heap, samplerHeap };
 		dx.command_list->SetDescriptorHeaps(_countof(heaps), heaps);
 
-		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx_world.texture,
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_RENDER_TARGET));		
 
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dsv_heap->GetCPUDescriptorHandleForHeapStart();
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx_world.textureUploadHeap->GetCPUDescriptorHandleForHeapStart();
-
-		rtv_handle.ptr += dx.frame_index * dx.rtv_descriptor_size;
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle();
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->mRenderTargetTexture_handle;
 
 		dx.command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, &dsv_handle);
-
 	}
-	else*/
-
-
+	else
 	{
-
 		ID3D12DescriptorHeap* samplerHeap = dx.dx_renderTargets->GetSamplerHeap();
 		ID3D12DescriptorHeap* srv_heap = dx.dx_renderTargets->GetSrvHeap();		
 		
 		ID3D12DescriptorHeap* heaps[] = { srv_heap, samplerHeap };
 		dx.command_list->SetDescriptorHeaps(_countof(heaps), heaps);
 
-		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.dx_renderTargets->GetBackBufferRenderTarget(dx.frame_index),
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+		D3D12_RESOURCE_BARRIER transitionBarrier = get_transition_barrier(dx.dx_renderTargets->GetBackBufferRenderTarget(dx.frame_index),
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->dsv_heap->GetCPUDescriptorHandleForHeapStart();
+		dx.command_list->ResourceBarrier(1, &transitionBarrier);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle();
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->GetBackBuffer_rtv_handles(dx.frame_index);
 
 		dx.command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, &dsv_handle);
@@ -1453,28 +1451,15 @@ void dx_end_frame() {
 	{
 		//Do RAYtrace
 
-		//use forword buffer as a texture
-
-		/*
-		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx_world.texture,
-			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST));	
-
-		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.dx_renderTargets->render_targets[dx.frame_index],
-			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE));
-
-		dx.command_list->CopyResource(dx_world.texture, dx.dx_renderTargets->render_targets[dx.frame_index]);
-
-		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx_world.texture,
-			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
-
-		*/
-
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 
 		DXR::UpdateAccelerationStructures(dx, *dx.dxr, dx_world);
 		DXR::Build_Command_List(dx, *dx.dxr, dx_world);
 
-		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.dx_renderTargets->render_targets[dx.frame_index],
-			D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COPY_DEST));
+		dx.command_list->ResourceBarrier(1, 
+			&get_transition_barrier(dx.dx_renderTargets->render_targets[dx.frame_index],
+				D3D12_RESOURCE_STATE_COPY_SOURCE/*before*/,
+				D3D12_RESOURCE_STATE_COPY_DEST/*after*/));
 
 		dx.command_list->CopyResource(dx.dx_renderTargets->render_targets[dx.frame_index], dx.DXROutput);
 

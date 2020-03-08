@@ -37,6 +37,7 @@ enum Dx_Sampler_Index {
 	SAMPLER_MIP_CLAMP,
 	SAMPLER_NOMIP_REPEAT,
 	SAMPLER_NOMIP_CLAMP,
+	SAMPLER_FULLSCREEN_CLAMP,
 	SAMPLER_COUNT
 };
 
@@ -207,7 +208,4 @@ struct Dx_World {
 	ID3D12Resource*									materialCB;
 	MaterialCB*										materialCBData;
 	UINT8*											materialCBStart;
-
-	ID3D12Resource*									texture;
-	ID3D12Resource*									textureUploadHeap;
 };

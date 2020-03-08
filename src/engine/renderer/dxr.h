@@ -248,7 +248,6 @@ namespace DXR
 	void Init_Shader_Compiler(D3D12ShaderCompilerInfo &shaderCompiler);
 
 	void Create_Constant_Buffer(Dx_Instance &d3d, ID3D12Resource** buffer, UINT64 size);
-	void Create_Texture(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 	void Create_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 	void Create_Material_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 

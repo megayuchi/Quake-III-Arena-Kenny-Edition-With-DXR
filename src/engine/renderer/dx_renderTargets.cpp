@@ -3,9 +3,47 @@
 
 #include "dx_renderTargets.h"
 
+#include <d3dx12.h>
 #include <functional>
 
+DXGI_FORMAT dx_renderTargets::get_depth_format() {
+	/*if (r_stencilbits->integer > 0) {
+		glConfig.stencilBits = 8;
+		return DXGI_FORMAT_D24_UNORM_S8_UINT;
+	}
+	else {
+		glConfig.stencilBits = 0;
+		return DXGI_FORMAT_D32_FLOAT;
+	}*/
 
+	return DXGI_FORMAT_D32_FLOAT;
+}
+
+static D3D12_HEAP_PROPERTIES get_heap_properties(D3D12_HEAP_TYPE heap_type) {
+	D3D12_HEAP_PROPERTIES properties;
+	properties.Type = heap_type;
+	properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	properties.CreationNodeMask = 1;
+	properties.VisibleNodeMask = 1;
+	return properties;
+}
+
+static D3D12_RESOURCE_DESC get_buffer_desc(UINT64 size) {
+	D3D12_RESOURCE_DESC desc;
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	desc.Alignment = 0;
+	desc.Width = size;
+	desc.Height = 1;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	desc.Format = DXGI_FORMAT_UNKNOWN;
+	desc.SampleDesc.Count = 1;
+	desc.SampleDesc.Quality = 0;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	return desc;
+}
 
 dx_renderTargets::dx_renderTargets()
 {
@@ -49,7 +87,7 @@ void dx_renderTargets::CreateDescriptorHeaps()
 	// RTV heap.
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
-		heap_desc.NumDescriptors = SWAPCHAIN_BUFFER_COUNT;
+		heap_desc.NumDescriptors = SWAPCHAIN_BUFFER_COUNT + 1;
 		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		heap_desc.NodeMask = 0;
@@ -94,12 +132,19 @@ void dx_renderTargets::CreateDescriptors()
 {
 	// RTV descriptors.
 	{
+#if defined(_DEBUG)
+		render_targets[0]->SetName(L"BackBufferRt_0");
+		render_targets[1]->SetName(L"BackBufferRt_1");
+#endif
+
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = rtv_heap->GetCPUDescriptorHandleForHeapStart();
-		for (int i = 0; i < SWAPCHAIN_BUFFER_COUNT; i++) {
+		for (int i = 0; i < SWAPCHAIN_BUFFER_COUNT; i++)
+		{
 			mDevice->CreateRenderTargetView(render_targets[i], nullptr, rtv_handle);
 			mBackBuffer_rtv_handles[i] = rtv_handle;
 			rtv_handle.ptr += rtv_descriptor_size;
 		}
+		
 	}
 
 	// Samplers.
@@ -132,49 +177,95 @@ void dx_renderTargets::CreateDescriptors()
 			def.gl_min_filter = GL_LINEAR;
 			CreateSamplerDescriptor(def, SAMPLER_NOMIP_CLAMP);
 		}
+		{
+			Vk_Sampler_Def def;
+			def.repeat_texture = false;
+			def.gl_mag_filter = GL_NEAREST;
+			def.gl_min_filter = GL_NEAREST;
+			CreateSamplerDescriptor(def, SAMPLER_FULLSCREEN_CLAMP);
+		}
+		
+	}
+}
+
+void dx_renderTargets::CreateRenderTargets(const int width, const int height)
+{
+	//make any heaps?
+
+	//make texture?
+
+	HRESULT hr;
+
+	// Describe the texture
+	D3D12_RESOURCE_DESC textureDesc = {};
+	textureDesc.MipLevels = 1;
+	textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	textureDesc.Width = width;
+	textureDesc.Height = height;
+	textureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+	textureDesc.DepthOrArraySize = 1;
+	textureDesc.SampleDesc.Count = 1;
+	textureDesc.SampleDesc.Quality = 0;
+	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+	// Create the texture resource
+	hr = mDevice->CreateCommittedResource(&get_heap_properties(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &textureDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&mRenderTargetTexture));
+	if (FAILED(hr))
+	{
+		ri.Error(ERR_FATAL, "Error: failed to create texture!");
 	}
 
-}
+#if defined(_DEBUG)
+	mRenderTargetTexture->SetName(L"RenderTargetTexture");
+#endif
 
-DXGI_FORMAT dx_renderTargets::get_depth_format() {
-	/*if (r_stencilbits->integer > 0) {
-		glConfig.stencilBits = 8;
-		return DXGI_FORMAT_D24_UNORM_S8_UINT;
+	const UINT64 uploadBufferSize = GetRequiredIntermediateSize(mRenderTargetTexture, 0, 1);
+
+	// Describe the resource
+	D3D12_RESOURCE_DESC resourceDesc = {};
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resourceDesc.Alignment = 0;
+	resourceDesc.Width = uploadBufferSize;
+	resourceDesc.Height = 1;
+	resourceDesc.DepthOrArraySize = 1;
+	resourceDesc.MipLevels = 1;
+	resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+	resourceDesc.SampleDesc.Count = 1;
+	resourceDesc.SampleDesc.Quality = 0;
+	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	// Create the upload heap
+	hr = mDevice->CreateCommittedResource(&get_heap_properties(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&mRenderTargetTextureUploadHeap));
+	if (FAILED(hr))
+	{
+		ri.Error(ERR_FATAL, "Error: failed to create texture upload heap!");
 	}
-	else {
-		glConfig.stencilBits = 0;
-		return DXGI_FORMAT_D32_FLOAT;
-	}*/
 
-	return DXGI_FORMAT_D32_FLOAT;
+	UINT8 *pixelData = new UINT8[4 * width * height];
+	for (int x = 0; x < width; ++x)
+		for (int y = 0; y < height; ++y)
+		{
+			int i = x + (y * width);
+			pixelData[i * 4 + 0] = 0;
+			pixelData[i * 4 + 1] = rand() % 255;
+			pixelData[i * 4 + 2] = 0;
+			pixelData[i * 4 + 3] = 255;
+		}
+	UploadImageData(mRenderTargetTexture, width, height, 1, pixelData, 4);
+
+	mRenderTargetTextureCurrentState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+	delete[] pixelData;
+
+	//make target?
+	
+	D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = rtv_heap->GetCPUDescriptorHandleForHeapStart();
+	rtv_handle.ptr += SWAPCHAIN_BUFFER_COUNT * rtv_descriptor_size;
+	
+	mDevice->CreateRenderTargetView(mRenderTargetTexture, nullptr, rtv_handle);
+	mRenderTargetTexture_handle = rtv_handle;
 }
-
-static D3D12_HEAP_PROPERTIES get_heap_properties(D3D12_HEAP_TYPE heap_type) {
-	D3D12_HEAP_PROPERTIES properties;
-	properties.Type = heap_type;
-	properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	properties.CreationNodeMask = 1;
-	properties.VisibleNodeMask = 1;
-	return properties;
-}
-
-static D3D12_RESOURCE_DESC get_buffer_desc(UINT64 size) {
-	D3D12_RESOURCE_DESC desc;
-	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	desc.Alignment = 0;
-	desc.Width = size;
-	desc.Height = 1;
-	desc.DepthOrArraySize = 1;
-	desc.MipLevels = 1;
-	desc.Format = DXGI_FORMAT_UNKNOWN;
-	desc.SampleDesc.Count = 1;
-	desc.SampleDesc.Quality = 0;
-	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-	return desc;
-}
-
 
 void dx_renderTargets::CreateDepthBufferResources()
 {
@@ -459,4 +550,14 @@ void dx_renderTargets::CreateSamplerDescriptor(const Vk_Sampler_Def& def, Dx_Sam
 	sampler_handle.ptr += sampler_descriptor_size * sampler_index;
 
 	mDevice->CreateSampler(&sampler_desc, sampler_handle);
+}
+
+D3D12_RESOURCE_BARRIER dx_renderTargets::SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState)
+{
+	D3D12_RESOURCE_BARRIER transitionBarrier = get_transition_barrier2(mRenderTargetTexture,
+		mRenderTargetTextureCurrentState, afterState);
+
+	mRenderTargetTextureCurrentState = afterState;
+
+	return transitionBarrier;
 }

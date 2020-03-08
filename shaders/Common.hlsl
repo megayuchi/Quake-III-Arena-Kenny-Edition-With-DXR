@@ -52,6 +52,7 @@ RaytracingAccelerationStructure SceneBVH	: register(t0, space0);
 ByteAddressBuffer indices					: register(t1, space0);
 ByteAddressBuffer vertices					: register(t2, space0);
 Texture2D<float4> albedo					: register(t3, space0);
+Texture2D<float> depth					: register(t4, space0);
 
 struct VertexAttributes
 {
