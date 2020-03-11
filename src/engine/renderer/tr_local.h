@@ -499,6 +499,7 @@ typedef struct {
 	cplane_t	frustum[4];
 	vec3_t		visBounds[2];
 	float		zFar;
+	int			rdflags;
 } viewParms_t;
 
 

@@ -323,7 +323,7 @@ R_RotateForViewer
 Sets up the modelview matrix for a given viewParm
 =================
 */
-void R_RotateForViewer (void) 
+void R_RotateForViewer (qboolean updateDXR)
 {
 	float	viewerMatrix[16];
 	vec3_t	origin;
@@ -361,6 +361,11 @@ void R_RotateForViewer (void)
 	// to OpenGL's coordinate system (looking down -Z)
 	myGlMultMatrix( viewerMatrix, s_flipMatrix, tr.or.modelViewMatrix );
 	myGlMultMatrix(viewerMatrix, s_flipMatrix, tr. or .viewMatrix);
+	if (updateDXR)
+	{
+		Com_Memcpy(dx_world.view_transform, backEnd. or .viewMatrix, 64);
+	}
+	
 	
 
 
@@ -816,7 +821,7 @@ static qboolean SurfIsOffscreen( const drawSurf_t *drawSurf, vec4_t clipDest[128
 		return qfalse;
 	}
 
-	R_RotateForViewer();
+	R_RotateForViewer(qfalse);
 
 	R_DecomposeSort( drawSurf->sort, &entityNum, &shader, &fogNum, &dlighted );
 	RB_BeginSurface( shader, fogNum );
@@ -1555,11 +1560,41 @@ void R_RenderView (viewParms_t *parms) {
 	tr.viewCount++;
 
 	// set viewParms.world
-	R_RotateForViewer ();
+	qboolean updateDXR = (parms->rdflags == 0)? qtrue: qfalse;
+	R_RotateForViewer (updateDXR);
 
 	R_SetupFrustum ();
 
 	R_GenerateDrawSurfs();
+
+	if (updateDXR)
+	{
+		//MICK move this into dx.cpp
+		const float* p = tr.viewParms.projectionMatrix;
+		
+
+		// update q3's proj matrix (opengl) to d3d conventions: z - [0, 1] instead of [-1, 1]
+		float zNear = r_znear->value;
+		float zFar = backEnd.viewParms.zFar;
+		float P10 = -zFar / (zFar - zNear);
+		float P14 = -zFar * zNear / (zFar - zNear);
+
+		float proj[16] = {
+			p[0],  p[1],  p[2], p[3],
+			p[4],  p[5],  p[6], p[7],
+			p[8],  p[9],  P10,  p[11],
+			p[12], p[13], P14,  p[15]
+		};
+
+		
+		for (int i = 0; i < 16; ++i)//MICK remove this copy
+		{			
+			dx_world.proj_transform[i] = proj[i];
+		}
+
+		
+	}
+	
 
 	R_SortDrawSurfs( tr.refdef.drawSurfs + firstDrawSurf, tr.refdef.numDrawSurfs - firstDrawSurf );
 

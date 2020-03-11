@@ -36,6 +36,8 @@ struct HitInfo
 cbuffer ViewCB : register(b0)
 {
 	matrix view;
+	matrix projMatrixInv;
+	matrix viewMatrixInv;
 	float4 viewOriginAndTanHalfFovY;
 	float4 light;
 	float2 resolution;

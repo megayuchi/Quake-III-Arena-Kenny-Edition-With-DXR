@@ -106,6 +106,43 @@ float4 doLight(float3 toLight, float3 hitPos, float3 normal, float3 camPos)
 	return float4(light, light, light, 1.0f);
 }
 
+float3 WorldPosFromDepth(uint2 screenIndex, float2 texCoord)
+{
+	float depthDist = depth.Load(int3(screenIndex.xy, 0)).r;
+
+	//float z = depthDist * 2.0 - 1.0;
+	float z = depthDist;
+
+	texCoord.y = 1.0f - texCoord.y;
+
+	float4 clipSpacePosition = float4(texCoord * 2.0 - 1.0, z, 1.0);
+	float4 viewSpacePosition = mul(projMatrixInv, clipSpacePosition);
+
+	// Perspective division
+	viewSpacePosition /= viewSpacePosition.w;
+
+	float4 worldSpacePosition = mul(viewMatrixInv, viewSpacePosition);
+
+	return worldSpacePosition.xyz;
+}
+
+float2 DebugScreenOut(float4 worldPos)
+{
+	float4 viewSpacePosition = mul(viewMatrixInv, worldPos);
+	float4 clipSpacePosition = mul(projMatrixInv, viewSpacePosition);
+
+	//float4 viewSpacePosition = mul(worldPos, viewMatrixInv);
+	//float4 clipSpacePosition = mul(viewSpacePosition, projMatrixInv);
+
+	clipSpacePosition.xy /= clipSpacePosition.w;
+
+	//return (clipSpacePosition.xy *0.25) + 0.75f;
+	return (clipSpacePosition.xy *0.5) + 0.5f;
+	//return clipSpacePosition.xy;
+}
+
+
+
 [shader("raygeneration")]
 void RayGen()
 {
@@ -142,6 +179,7 @@ void RayGen()
 
 	LaunchIndex.x = LaunchDimensions.x - LaunchIndex.x;
 	RTOutput[LaunchIndex.xy] = float4(0.0f, 0.0, 0.0f, 1.0f);
+	float2 screenUvs = LaunchIndex.xy / resolution.xy;
 
 	if (0)
 	{
@@ -157,6 +195,25 @@ void RayGen()
 	{
 		float4 texColor = albedo.Load(int3(LaunchIndex.xy, 0)).rgba;
 
+		float3 worldPos = WorldPosFromDepth(LaunchIndex.xy, screenUvs);
+
+		texColor.rgb = worldPos;
+		//texColor.rgb = payload.HitPos.xyz;
+		
+		RTOutput[LaunchIndex.xy] = texColor;
+		/*
+		float2 debugPos = DebugScreenOut(float4 (payload.HitPos.xyz, 1.0f));
+		debugPos.y = 1.0f - debugPos.y;
+		
+		uint2 debugScreenIndex = debugPos * resolution.xy;
+
+		RTOutput[debugScreenIndex.xy] = float4(1,0.5,0.25,1);
+
+		*/
+		//RTOutput[LaunchIndex.xy] = float4(1, 0.5, 0.25, 1);
+
+
+		/*
 		
 		texColor.rgb = pow(texColor.rgb, DISPLAYGAMMA);
 		
@@ -202,6 +259,8 @@ void RayGen()
 			}
 		}
 		RTOutput[LaunchIndex.xy].rgb = pow(RTOutput[LaunchIndex.xy].rgb, 1.0 / DISPLAYGAMMA);
+
+		*/
 	}	
 
 	//output green dots at the sky box, just used to make sure my raygen shader is getting called

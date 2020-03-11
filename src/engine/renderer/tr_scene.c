@@ -284,6 +284,7 @@ void RE_RenderScene( const refdef_t *fd ) {
 	viewParms_t		parms;
 	int				startTime;
 
+	dx_world.rdflags = fd->rdflags;
 	if (fd->rdflags == 0) //we only want the camera for the "main" scene 
 	{
 		Com_Memcpy(dx_world.viewOrg, fd->vieworg, sizeof(vec3_t));
@@ -374,6 +375,7 @@ void RE_RenderScene( const refdef_t *fd ) {
 	// convert to GL's 0-at-the-bottom space
 	//
 	Com_Memset( &parms, 0, sizeof( parms ) );
+	parms.rdflags = fd->rdflags;
 	parms.viewportX = tr.refdef.x;
 	parms.viewportY = glConfig.vidHeight - ( tr.refdef.y + tr.refdef.height );
 	parms.viewportWidth = tr.refdef.width;

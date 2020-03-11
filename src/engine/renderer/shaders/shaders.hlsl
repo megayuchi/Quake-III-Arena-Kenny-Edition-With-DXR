@@ -80,6 +80,7 @@ Multi_Texture_PS_Data multi_texture_vs(
 	ps_data.normal = normal;
 	ps_data.normal = mul(world_xform, float4(normal.xyz, 0));
 	ps_data.normal.w = 1.0f;
+	ps_data.normal = position;
 	ps_data.color = color;
     ps_data.uv0 = uv0;
     ps_data.uv1 = uv1;
@@ -99,7 +100,7 @@ Multi_Texture_PS_Data multi_texture_clipping_plane_vs(
     Multi_Texture_PS_Data ps_data;
     ps_data.position = mul(clip_space_xform, position);
 	ps_data.normal = normal;
-	ps_data.normal = mul(world_xform, float4(normal.xyz, 0));
+	ps_data.normal = mul(world_xform, float4(normal.xyz, 0));	
 	ps_data.normal.w = 1.0f;
     ps_data.color = color;
     ps_data.uv0 = uv0;
@@ -131,7 +132,8 @@ float4 multi_texture_mul_ps(Multi_Texture_PS_Data data) : SV_TARGET {
 	//texture1 == light map
 	//float4 out_color = data.color * texture0.Sample(sampler0, data.uv0) *  texture1.Sample(sampler1, data.uv1);
 	//float4 out_color = (data.normal + float4(1, 1, 1, 0)) * float4(0.5f,0.5f,0.5f,1);//show normals
-	float4 out_color = data.color * texture0.Sample(sampler0, data.uv0);
+	float4 out_color = data.normal;//show normals
+	//float4 out_color = data.color * texture0.Sample(sampler0, data.uv0);
 	//float4 out_color = data.color;
 
 

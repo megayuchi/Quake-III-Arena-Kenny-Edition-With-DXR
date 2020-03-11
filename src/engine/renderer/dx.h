@@ -195,9 +195,11 @@ struct Dx_World {
 	float modelview_transform[16];
 	float model_transform[16];
 	float view_transform[16];
+	float proj_transform[16];
 	vec3_t		viewOrg;
 	vec3_t		viewaxisForword;
 	vec2_t		viewFov;
+	int			rdflags;			// RDF_NOWORLDMODEL, etc
 	
 
 	//DXR
