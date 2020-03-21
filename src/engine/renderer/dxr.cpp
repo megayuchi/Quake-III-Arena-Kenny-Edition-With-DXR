@@ -155,136 +155,6 @@ namespace DXR
 		memcpy(world.materialCBStart, world.materialCBData, sizeof(world.materialCBData));
 	}
 
-	bool gluInvertMatrix(const float m[16], float invOut[16])
-	{
-		float inv[16], det;
-		int i;
-
-		inv[0] = m[5] * m[10] * m[15] -
-			m[5] * m[11] * m[14] -
-			m[9] * m[6] * m[15] +
-			m[9] * m[7] * m[14] +
-			m[13] * m[6] * m[11] -
-			m[13] * m[7] * m[10];
-
-		inv[4] = -m[4] * m[10] * m[15] +
-			m[4] * m[11] * m[14] +
-			m[8] * m[6] * m[15] -
-			m[8] * m[7] * m[14] -
-			m[12] * m[6] * m[11] +
-			m[12] * m[7] * m[10];
-
-		inv[8] = m[4] * m[9] * m[15] -
-			m[4] * m[11] * m[13] -
-			m[8] * m[5] * m[15] +
-			m[8] * m[7] * m[13] +
-			m[12] * m[5] * m[11] -
-			m[12] * m[7] * m[9];
-
-		inv[12] = -m[4] * m[9] * m[14] +
-			m[4] * m[10] * m[13] +
-			m[8] * m[5] * m[14] -
-			m[8] * m[6] * m[13] -
-			m[12] * m[5] * m[10] +
-			m[12] * m[6] * m[9];
-
-		inv[1] = -m[1] * m[10] * m[15] +
-			m[1] * m[11] * m[14] +
-			m[9] * m[2] * m[15] -
-			m[9] * m[3] * m[14] -
-			m[13] * m[2] * m[11] +
-			m[13] * m[3] * m[10];
-
-		inv[5] = m[0] * m[10] * m[15] -
-			m[0] * m[11] * m[14] -
-			m[8] * m[2] * m[15] +
-			m[8] * m[3] * m[14] +
-			m[12] * m[2] * m[11] -
-			m[12] * m[3] * m[10];
-
-		inv[9] = -m[0] * m[9] * m[15] +
-			m[0] * m[11] * m[13] +
-			m[8] * m[1] * m[15] -
-			m[8] * m[3] * m[13] -
-			m[12] * m[1] * m[11] +
-			m[12] * m[3] * m[9];
-
-		inv[13] = m[0] * m[9] * m[14] -
-			m[0] * m[10] * m[13] -
-			m[8] * m[1] * m[14] +
-			m[8] * m[2] * m[13] +
-			m[12] * m[1] * m[10] -
-			m[12] * m[2] * m[9];
-
-		inv[2] = m[1] * m[6] * m[15] -
-			m[1] * m[7] * m[14] -
-			m[5] * m[2] * m[15] +
-			m[5] * m[3] * m[14] +
-			m[13] * m[2] * m[7] -
-			m[13] * m[3] * m[6];
-
-		inv[6] = -m[0] * m[6] * m[15] +
-			m[0] * m[7] * m[14] +
-			m[4] * m[2] * m[15] -
-			m[4] * m[3] * m[14] -
-			m[12] * m[2] * m[7] +
-			m[12] * m[3] * m[6];
-
-		inv[10] = m[0] * m[5] * m[15] -
-			m[0] * m[7] * m[13] -
-			m[4] * m[1] * m[15] +
-			m[4] * m[3] * m[13] +
-			m[12] * m[1] * m[7] -
-			m[12] * m[3] * m[5];
-
-		inv[14] = -m[0] * m[5] * m[14] +
-			m[0] * m[6] * m[13] +
-			m[4] * m[1] * m[14] -
-			m[4] * m[2] * m[13] -
-			m[12] * m[1] * m[6] +
-			m[12] * m[2] * m[5];
-
-		inv[3] = -m[1] * m[6] * m[11] +
-			m[1] * m[7] * m[10] +
-			m[5] * m[2] * m[11] -
-			m[5] * m[3] * m[10] -
-			m[9] * m[2] * m[7] +
-			m[9] * m[3] * m[6];
-
-		inv[7] = m[0] * m[6] * m[11] -
-			m[0] * m[7] * m[10] -
-			m[4] * m[2] * m[11] +
-			m[4] * m[3] * m[10] +
-			m[8] * m[2] * m[7] -
-			m[8] * m[3] * m[6];
-
-		inv[11] = -m[0] * m[5] * m[11] +
-			m[0] * m[7] * m[9] +
-			m[4] * m[1] * m[11] -
-			m[4] * m[3] * m[9] -
-			m[8] * m[1] * m[7] +
-			m[8] * m[3] * m[5];
-
-		inv[15] = m[0] * m[5] * m[10] -
-			m[0] * m[6] * m[9] -
-			m[4] * m[1] * m[10] +
-			m[4] * m[2] * m[9] +
-			m[8] * m[1] * m[6] -
-			m[8] * m[2] * m[5];
-
-		det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
-
-		if (det == 0)
-			return false;
-
-		det = 1.0 / det;
-
-		for (i = 0; i < 16; i++)
-			invOut[i] = inv[i] * det;
-
-		return true;
-	}
-
 	void Update_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
 		DirectX::XMFLOAT3 eye = DirectX::XMFLOAT3(world.viewOrg[0], world.viewOrg[1], world.viewOrg[2]);
@@ -295,21 +165,10 @@ namespace DXR
 
 		DirectX::XMMATRIX view = DirectX::XMMatrixLookToLH(XMLoadFloat3(&eye), XMLoadFloat3(&lookAt), XMLoadFloat3(&up));
 		DirectX::XMMATRIX invView = DirectX::XMMatrixInverse(NULL, view);
-		
-
-		float inv_proj_transform[16];
-		float inv_view_transform[16];
-
-		bool ok = gluInvertMatrix(world.proj_transform, inv_proj_transform);
-		ok &= gluInvertMatrix(world.view_transform, inv_view_transform);
-		assert(ok);			
 
 		world.viewCBData->view = XMMatrixTranspose(invView);
-		world.viewCBData->projMatrixInv = DirectX::XMMATRIX(inv_proj_transform);
-		world.viewCBData->viewMatrixInv = DirectX::XMMATRIX(inv_view_transform);
-
-		//world.viewCBData->projMatrixInv = DirectX::XMMATRIX(world.proj_transform);
-		//world.viewCBData->viewMatrixInv = DirectX::XMMATRIX(world.view_transform);
+		world.viewCBData->projMatrixInv = DirectX::XMMatrixInverse(NULL, DirectX::XMMATRIX(world.proj_transform));
+		world.viewCBData->viewMatrixInv = DirectX::XMMatrixInverse(NULL, DirectX::XMMATRIX(world.view_transform));
 
 
 		world.viewCBData->viewOriginAndTanHalfFovY = DirectX::XMFLOAT4(eye.x, eye.y, eye.z, tanf(fov * 0.5f));
@@ -727,7 +586,7 @@ namespace DXR
 		ranges[1].OffsetInDescriptorsFromTableStart = 2;
 
 		ranges[2].BaseShaderRegister = 0; //register(t0);
-		ranges[2].NumDescriptors = 5;
+		ranges[2].NumDescriptors = 6;
 		ranges[2].RegisterSpace = 0; //register(t0,space0)
 		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		ranges[2].OffsetInDescriptorsFromTableStart = 3;
@@ -1120,10 +979,11 @@ namespace DXR
 		// 1 SRV for the index buffer
 		// 1 SRV for the vertex buffer
 		// 1 SRV for the texture
+		// 1 SRV for the texture
 		// 1 SRV for the depth texture
 
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.NumDescriptors = 8;
+		desc.NumDescriptors = 9;
 		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -1202,18 +1062,30 @@ namespace DXR
 
 		// Create the material texture SRV
 		{
-		D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-		textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		textureSRVDesc.Texture2D.MipLevels = 1;
-		textureSRVDesc.Texture2D.MostDetailedMip = 0;
-		textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
+			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			textureSRVDesc.Texture2D.MipLevels = 1;
+			textureSRVDesc.Texture2D.MostDetailedMip = 0;
+			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
-		handle.ptr += handleIncrement;
-		d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->mRenderTargetTexture, &textureSRVDesc, handle);
-	}
-		
-		
+			handle.ptr += handleIncrement;
+			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_ALBEDO_RT), &textureSRVDesc, handle);
+		}
+
+		// Create the material texture SRV
+		{
+			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
+			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			textureSRVDesc.Texture2D.MipLevels = 1;
+			textureSRVDesc.Texture2D.MostDetailedMip = 0;
+			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+			handle.ptr += handleIncrement;
+			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_NORMALS_RT), &textureSRVDesc, handle);
+		}
+
 		// Create the material depth SRV
 		{
 			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
@@ -1223,10 +1095,8 @@ namespace DXR
 			textureSRVDesc.Texture2D.MostDetailedMip = 0;
 			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->depth_stencil_buffer, &textureSRVDesc, handle);
+			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetDepthStencilBuffer(dx_renderTargets::G_BUFFER_DEPTH_RT), &textureSRVDesc, handle);
 		}
-
-		
 	}
 
 	void Create_DXR_Output(Dx_Instance &d3d)

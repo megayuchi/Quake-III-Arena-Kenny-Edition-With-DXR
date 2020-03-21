@@ -11,6 +11,20 @@ struct ID3D12DescriptorHeap;
 class dx_renderTargets
 {
 public:	
+
+	enum Dx_DepthTarget_Index {
+		BACKBUFFER_DEPTH_RT = 0,
+		G_BUFFER_DEPTH_RT,
+		DEPTH_TARGET_COUNT
+	};
+
+
+	enum Dx_RenderTarget_Index {
+		G_BUFFER_ALBEDO_RT = 0,
+		G_BUFFER_NORMALS_RT,
+		RENDER_TARGET_COUNT
+	};
+
 	dx_renderTargets();
 	~dx_renderTargets();
 
@@ -22,8 +36,10 @@ public:
 	void CreateDescriptorHeaps();
 	void CreateDescriptors();	
 	void CreateDepthBufferResources();
+	void CreateDepthBufferResource(Dx_DepthTarget_Index index);
 
 	void CreateRenderTargets(const int width, const int height);
+	void CreateRenderTarget(const int width, const int height, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags, D3D12_CLEAR_VALUE* optimized_clear_value, D3D12_RESOURCE_STATES initialResourceState, Dx_RenderTarget_Index index);
 
 	Dx_Image CreateImage(int width, int height, Dx_Image_Format format, int mip_levels, bool repeat_texture, int image_index);
 	void UploadImageData(ID3D12Resource* texture, int width, int height, int mip_levels, const uint8_t* pixels, int bytes_per_pixel);
@@ -41,9 +57,12 @@ public:
 		return mBackBuffer_rtv_handles[frame_index];
 	}
 
-	D3D12_CPU_DESCRIPTOR_HANDLE GetBackBuffer_dsv_handle()
+	D3D12_CPU_DESCRIPTOR_HANDLE GetBackBuffer_dsv_handle(Dx_DepthTarget_Index index)
 	{
-		return dx.dx_renderTargets->dsv_heap->GetCPUDescriptorHandleForHeapStart();
+		D3D12_CPU_DESCRIPTOR_HANDLE handle = dsv_heap->GetCPUDescriptorHandleForHeapStart();
+		handle.ptr += index * dsv_descriptor_size;
+
+		return handle;
 	}
 	
 	D3D12_GPU_DESCRIPTOR_HANDLE GetSamplerHandle(Dx_Sampler_Index index)
@@ -76,10 +95,10 @@ public:
 	ID3D12Device5* mDevice = (nullptr);
 
 	ID3D12Resource* render_targets[SWAPCHAIN_BUFFER_COUNT];
-	ID3D12Resource* depth_stencil_buffer = nullptr;
+	ID3D12Resource* depth_stencil_buffer[DEPTH_TARGET_COUNT];
+	D3D12_RESOURCE_STATES mDepthTextureCurrentState[DEPTH_TARGET_COUNT];
 
 	D3D12_CPU_DESCRIPTOR_HANDLE mBackBuffer_rtv_handles[SWAPCHAIN_BUFFER_COUNT];
-
 	
 
 private:
@@ -88,6 +107,7 @@ private:
 	// Descriptor heaps.
 	//
 	ID3D12DescriptorHeap* dsv_heap = (nullptr);	// depth-stencil view.
+	UINT dsv_descriptor_size = (0);
 
 	ID3D12DescriptorHeap* rtv_heap = (nullptr);//render-target view.
 	UINT rtv_descriptor_size = (0);
@@ -99,15 +119,36 @@ private:
 	UINT sampler_descriptor_size = (0);
 
 
-public:
+//public:
 	//render targets
-	ID3D12Resource*									mRenderTargetTexture;
-	ID3D12Resource*									mRenderTargetTextureUploadHeap;
+	ID3D12Resource*									mRenderTargetTexture[RENDER_TARGET_COUNT];
 
-	D3D12_CPU_DESCRIPTOR_HANDLE mRenderTargetTexture_handle;
-	D3D12_RESOURCE_STATES mRenderTargetTextureCurrentState;
+	D3D12_CPU_DESCRIPTOR_HANDLE mRenderTargetTexture_handle[RENDER_TARGET_COUNT];
+	D3D12_RESOURCE_STATES mRenderTargetTextureCurrentState[RENDER_TARGET_COUNT];
 
-	D3D12_RESOURCE_BARRIER SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState);
+	ID3D12DescriptorHeap* rtv_G_BufferHeap = (nullptr);//render-target view.
+	UINT rtv_G_BufferDescriptor_size = (0);
+
+	public:
+	D3D12_RESOURCE_BARRIER SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState, Dx_RenderTarget_Index index);
+	bool DoDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index);
+	D3D12_RESOURCE_BARRIER SetDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE GetRenderTargetTextureHandle(Dx_RenderTarget_Index index)
+	{
+		return mRenderTargetTexture_handle[index];
+	}
+
+	ID3D12Resource*	GetRenderTargetTexture(Dx_RenderTarget_Index index)
+	{
+		return mRenderTargetTexture[index];
+	}
+
+	//depth
+	ID3D12Resource* GetDepthStencilBuffer(Dx_DepthTarget_Index index)
+	{
+		return depth_stencil_buffer[index];
+	}
 
 };
 

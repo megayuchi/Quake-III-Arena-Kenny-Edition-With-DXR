@@ -125,7 +125,7 @@ void dx_initialize()
 	}
 #endif
 
-	
+
 
 	IDXGIFactory4* factory;
 	DX_CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
@@ -229,7 +229,7 @@ void dx_initialize()
 	//
 	dx.dx_renderTargets->CreateDescriptorHeaps();
 
-	
+
 
 	//
 	// Create descriptors.
@@ -499,7 +499,7 @@ void dx_shutdown() {
 	delete dx.dxr;
 #endif
 
-	
+
 	for (int i = 0; i < 2; i++) {
 		for (int j = 0; j < 2; j++) {
 			dx.shadow_volume_pipelines[i][j]->Release();
@@ -517,12 +517,12 @@ void dx_shutdown() {
 	dx.swapchain->Release();
 	dx.command_allocator->Release();
 	dx.helper_command_allocator->Release();
-	
+
 	dx.root_signature->Release();
 	dx.command_queue->Release();
 	dx.command_list->Release();
 	dx.fence->Release();
-	
+
 	dx.geometry_buffer->Release();
 	dx.skybox_pipeline->Release();
 	dx.shadow_finish_pipeline->Release();
@@ -700,6 +700,9 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 	rt_blend_desc.BlendEnable = (def.state_bits & (GLS_SRCBLEND_BITS | GLS_DSTBLEND_BITS)) ? TRUE : FALSE;
 	rt_blend_desc.LogicOpEnable = FALSE;
 
+	blend_state.RenderTarget[1].BlendEnable = FALSE;
+	blend_state.RenderTarget[1].LogicOpEnable = FALSE;
+
 	if (rt_blend_desc.BlendEnable) {
 		switch (def.state_bits & GLS_SRCBLEND_BITS) {
 		case GLS_SRCBLEND_ZERO:
@@ -855,8 +858,9 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 	pipeline_desc.DepthStencilState = depth_stencil_state;
 	pipeline_desc.InputLayout = { input_element_desc, def.shader_type == Vk_Shader_Type::single_texture ? 4u : 5u };
 	pipeline_desc.PrimitiveTopologyType = def.line_primitives ? D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE : D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	pipeline_desc.NumRenderTargets = 1;
+	pipeline_desc.NumRenderTargets = 2;
 	pipeline_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	pipeline_desc.RTVFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	pipeline_desc.DSVFormat = dx_renderTargets::get_depth_format();
 	pipeline_desc.SampleDesc.Count = 1;
 	pipeline_desc.SampleDesc.Quality = 0;
@@ -992,8 +996,10 @@ static D3D12_VIEWPORT get_viewport(Vk_Depth_Range depth_range) {
 	else if (depth_range == Vk_Depth_Range::weapon) {
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 0.3f;
+		viewport.MaxDepth = 1.0f;
 	}
 	else {
+		assert(depth_range == Vk_Depth_Range::normal);
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 1.0f;
 	}
@@ -1029,15 +1035,26 @@ void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t col
 		D3D12_CLEAR_FLAGS flags = D3D12_CLEAR_FLAG_DEPTH;
 		if (r_shadows->integer == 2)
 			flags |= D3D12_CLEAR_FLAG_STENCIL;
-		
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle();
+
+		static cvar_t*	dxr_on = ri.Cvar_Get("dxr_on", "0", 0);
+		dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle;
+
+		if (dxr_on->value && drxAsm.MeshCount() > 0)
+		{
+			dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle(dx_renderTargets::G_BUFFER_DEPTH_RT);
+		}
+		else
+		{
+			dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle(dx_renderTargets::BACKBUFFER_DEPTH_RT);
+		}
+
 		dx.command_list->ClearDepthStencilView(dsv_handle, flags, 1.0f, 0, 1, &clear_rect);
 	}
 
-	if (clear_color) {
-		/*D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->rtv_heap->GetCPUDescriptorHandleForHeapStart();
-		rtv_handle.ptr += dx.frame_index * dx.dx_renderTargets->rtv_descriptor_size;*/
-
+	if (clear_color)
+	{
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->GetBackBuffer_rtv_handles(dx.frame_index);
 		dx.command_list->ClearRenderTargetView(rtv_handle, color, 1, &clear_rect);
 	}
@@ -1153,7 +1170,7 @@ UINT dxr_MeshVertexCount(int bottomLevelIndex)
 
 }
 void dx_bind_geometry()
-{	
+{
 	// xyz stream
 	{
 		if ((dx.xyz_elements + tess.numVertexes) * sizeof(vec4_t) > XYZ_SIZE)
@@ -1253,7 +1270,7 @@ void dx_bind_geometry()
 }
 
 void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Depth_Range depth_range, bool indexed, bool lines)
-{	
+{
 	// color
 	{
 		if ((dx.color_st_elements + tess.numVertexes) * sizeof(color4ub_t) > COLOR_SIZE)
@@ -1306,7 +1323,7 @@ void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Dept
 
 		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.dx_renderTargets->GetSrvHandle(textureIndex);
 		dx.command_list->SetGraphicsRootDescriptorTable(1, srv_handle);
-		
+
 		const Dx_Sampler_Index sampler_index = dx_world.images[textureIndex].sampler_index;
 		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.dx_renderTargets->GetSamplerHandle(sampler_index);
 
@@ -1318,7 +1335,7 @@ void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Dept
 		int textureIndex = dx_world.current_image_indices[1];
 		D3D12_GPU_DESCRIPTOR_HANDLE srv_handle = dx.dx_renderTargets->GetSrvHandle(textureIndex);
 		dx.command_list->SetGraphicsRootDescriptorTable(3, srv_handle);
-		
+
 		const Dx_Sampler_Index sampler_index = dx_world.images[textureIndex].sampler_index;
 		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.dx_renderTargets->GetSamplerHandle(sampler_index);
 
@@ -1360,18 +1377,30 @@ void SetupTagets()
 		ID3D12DescriptorHeap* heaps[] = { srv_heap, samplerHeap };
 		dx.command_list->SetDescriptorHeaps(_countof(heaps), heaps);
 
-		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_RENDER_TARGET));		
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_RENDER_TARGET, dx_renderTargets::G_BUFFER_ALBEDO_RT));
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_RENDER_TARGET, dx_renderTargets::G_BUFFER_NORMALS_RT));
 
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle();
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->mRenderTargetTexture_handle;
 
-		dx.command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, &dsv_handle);
+		if (dx.dx_renderTargets->DoDepthTextureState(D3D12_RESOURCE_STATE_DEPTH_WRITE, dx_renderTargets::G_BUFFER_DEPTH_RT))
+		{
+			dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetDepthTextureState(D3D12_RESOURCE_STATE_DEPTH_WRITE, dx_renderTargets::G_BUFFER_DEPTH_RT));
+		}
+
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle(dx_renderTargets::G_BUFFER_DEPTH_RT);
+
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[] = {
+			dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::G_BUFFER_ALBEDO_RT) ,
+			dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::G_BUFFER_NORMALS_RT)
+		};
+
+		dx.command_list->OMSetRenderTargets(_countof(rtv_handles), rtv_handles, FALSE, &dsv_handle);
 	}
 	else
 	{
 		ID3D12DescriptorHeap* samplerHeap = dx.dx_renderTargets->GetSamplerHeap();
-		ID3D12DescriptorHeap* srv_heap = dx.dx_renderTargets->GetSrvHeap();		
-		
+		ID3D12DescriptorHeap* srv_heap = dx.dx_renderTargets->GetSrvHeap();
+
 		ID3D12DescriptorHeap* heaps[] = { srv_heap, samplerHeap };
 		dx.command_list->SetDescriptorHeaps(_countof(heaps), heaps);
 
@@ -1380,7 +1409,7 @@ void SetupTagets()
 
 		dx.command_list->ResourceBarrier(1, &transitionBarrier);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle();
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = dx.dx_renderTargets->GetBackBuffer_dsv_handle(dx_renderTargets::BACKBUFFER_DEPTH_RT);
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = dx.dx_renderTargets->GetBackBuffer_rtv_handles(dx.frame_index);
 
 		dx.command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, &dsv_handle);
@@ -1434,7 +1463,7 @@ void dx_begin_frame()
 void dx_end_frame() {
 	if (!dx.active)
 		return;
-	
+
 	static cvar_t*	dxr_on = ri.Cvar_Get("dxr_on", "0", 0);
 	static cvar_t*	dxr_dump = ri.Cvar_Get("dxr_dump", "0", 0);
 
@@ -1446,17 +1475,20 @@ void dx_end_frame() {
 		drxAsm.WriteAllTopLevelMeshsDebug();
 		//drxAsm.WriteAllBottomLevelMeshsDebug();
 	}
-	
+
 	if (dxr_on->value && drxAsm.MeshCount() > 0)
 	{
 		//Do RAYtrace
 
-		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_ALBEDO_RT));
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_NORMALS_RT));
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetDepthTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_DEPTH_RT));
+
 
 		DXR::UpdateAccelerationStructures(dx, *dx.dxr, dx_world);
 		DXR::Build_Command_List(dx, *dx.dxr, dx_world);
 
-		dx.command_list->ResourceBarrier(1, 
+		dx.command_list->ResourceBarrier(1,
 			&get_transition_barrier(dx.dx_renderTargets->render_targets[dx.frame_index],
 				D3D12_RESOURCE_STATE_COPY_SOURCE/*before*/,
 				D3D12_RESOURCE_STATE_COPY_DEST/*after*/));

@@ -68,10 +68,14 @@ void dx_renderTargets::Shutdown()
 	}
 
 	rtv_heap->Release();
+	rtv_G_BufferHeap->Release();
 	srv_heap->Release();
 	sampler_heap->Release();
 
-	depth_stencil_buffer->Release();
+	for (int i=0; i < DEPTH_TARGET_COUNT; ++i)
+	{
+		depth_stencil_buffer[i]->Release();
+	}
 	dsv_heap->Release();
 
 }
@@ -95,14 +99,25 @@ void dx_renderTargets::CreateDescriptorHeaps()
 		rtv_descriptor_size = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	}
 
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
+		heap_desc.NumDescriptors = RENDER_TARGET_COUNT;
+		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		heap_desc.NodeMask = 0;
+		DX_CHECK(mDevice->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&rtv_G_BufferHeap)));
+		rtv_G_BufferDescriptor_size = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	}
+
 	// DSV heap.
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
-		heap_desc.NumDescriptors = 1;
+		heap_desc.NumDescriptors = DEPTH_TARGET_COUNT;
 		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		heap_desc.NodeMask = 0;
 		DX_CHECK(mDevice->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&dsv_heap)));
+		dsv_descriptor_size = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	}
 
 	// SRV heap.
@@ -144,7 +159,6 @@ void dx_renderTargets::CreateDescriptors()
 			mBackBuffer_rtv_handles[i] = rtv_handle;
 			rtv_handle.ptr += rtv_descriptor_size;
 		}
-		
 	}
 
 	// Samplers.
@@ -184,104 +198,89 @@ void dx_renderTargets::CreateDescriptors()
 			def.gl_min_filter = GL_NEAREST;
 			CreateSamplerDescriptor(def, SAMPLER_FULLSCREEN_CLAMP);
 		}
-		
+
 	}
 }
-
 void dx_renderTargets::CreateRenderTargets(const int width, const int height)
 {
-	//make any heaps?
+	CreateRenderTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, nullptr, D3D12_RESOURCE_STATE_COPY_DEST, G_BUFFER_ALBEDO_RT);
+	CreateRenderTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, nullptr, D3D12_RESOURCE_STATE_COPY_DEST, G_BUFFER_NORMALS_RT);
+#if defined(_DEBUG)
+	mRenderTargetTexture[G_BUFFER_ALBEDO_RT]->SetName(L"G_BUFFER_ALBEDO_RT-Texture");	
+	mRenderTargetTexture[G_BUFFER_NORMALS_RT]->SetName(L"G_BUFFER_NORMALS_RT-Texture");
+#endif
+}
 
+void dx_renderTargets::CreateRenderTarget(const int width, const int height, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags, D3D12_CLEAR_VALUE* optimized_clear_value, D3D12_RESOURCE_STATES initialResourceState, Dx_RenderTarget_Index index)
+{
 	//make texture?
-
 	HRESULT hr;
 
 	// Describe the texture
 	D3D12_RESOURCE_DESC textureDesc = {};
 	textureDesc.MipLevels = 1;
-	textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	textureDesc.Format = format;
 	textureDesc.Width = width;
 	textureDesc.Height = height;
-	textureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+	textureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | flags;
 	textureDesc.DepthOrArraySize = 1;
 	textureDesc.SampleDesc.Count = 1;
 	textureDesc.SampleDesc.Quality = 0;
 	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	textureDesc.Alignment = 0;
+	textureDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 
 	// Create the texture resource
-	hr = mDevice->CreateCommittedResource(&get_heap_properties(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &textureDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&mRenderTargetTexture));
+	hr = mDevice->CreateCommittedResource(&get_heap_properties(D3D12_HEAP_TYPE_DEFAULT),
+		D3D12_HEAP_FLAG_NONE,
+		&textureDesc,
+		initialResourceState,
+		optimized_clear_value,
+		IID_PPV_ARGS(&mRenderTargetTexture[index]));
+
 	if (FAILED(hr))
 	{
 		ri.Error(ERR_FATAL, "Error: failed to create texture!");
 	}
 
-#if defined(_DEBUG)
-	mRenderTargetTexture->SetName(L"RenderTargetTexture");
-#endif
 
-	const UINT64 uploadBufferSize = GetRequiredIntermediateSize(mRenderTargetTexture, 0, 1);
 
-	// Describe the resource
-	D3D12_RESOURCE_DESC resourceDesc = {};
-	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resourceDesc.Alignment = 0;
-	resourceDesc.Width = uploadBufferSize;
-	resourceDesc.Height = 1;
-	resourceDesc.DepthOrArraySize = 1;
-	resourceDesc.MipLevels = 1;
-	resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-	resourceDesc.SampleDesc.Count = 1;
-	resourceDesc.SampleDesc.Quality = 0;
-	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	mRenderTargetTextureCurrentState[index] = initialResourceState;
 
-	// Create the upload heap
-	hr = mDevice->CreateCommittedResource(&get_heap_properties(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&mRenderTargetTextureUploadHeap));
-	if (FAILED(hr))
-	{
-		ri.Error(ERR_FATAL, "Error: failed to create texture upload heap!");
-	}
+	//make target
+	D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = rtv_G_BufferHeap->GetCPUDescriptorHandleForHeapStart();
+	rtv_handle.ptr += index * rtv_G_BufferDescriptor_size;
 
-	UINT8 *pixelData = new UINT8[4 * width * height];
-	for (int x = 0; x < width; ++x)
-		for (int y = 0; y < height; ++y)
-		{
-			int i = x + (y * width);
-			pixelData[i * 4 + 0] = 0;
-			pixelData[i * 4 + 1] = rand() % 255;
-			pixelData[i * 4 + 2] = 0;
-			pixelData[i * 4 + 3] = 255;
-		}
-	UploadImageData(mRenderTargetTexture, width, height, 1, pixelData, 4);
-
-	mRenderTargetTextureCurrentState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-
-	delete[] pixelData;
-
-	//make target?
-	
-	D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = rtv_heap->GetCPUDescriptorHandleForHeapStart();
-	rtv_handle.ptr += SWAPCHAIN_BUFFER_COUNT * rtv_descriptor_size;
-	
-	mDevice->CreateRenderTargetView(mRenderTargetTexture, nullptr, rtv_handle);
-	mRenderTargetTexture_handle = rtv_handle;
+	mDevice->CreateRenderTargetView(mRenderTargetTexture[index], nullptr, rtv_handle);
+	mRenderTargetTexture_handle[index] = rtv_handle;
 }
 
 void dx_renderTargets::CreateDepthBufferResources()
 {
+	CreateDepthBufferResource(dx_renderTargets::BACKBUFFER_DEPTH_RT);
+	CreateDepthBufferResource(dx_renderTargets::G_BUFFER_DEPTH_RT);
+
+#if defined(_DEBUG)
+	depth_stencil_buffer[BACKBUFFER_DEPTH_RT]->SetName(L"BACKBUFFER_DEPTH_RT");
+	depth_stencil_buffer[G_BUFFER_DEPTH_RT]->SetName(L"G_BUFFER_DEPTH_RT");
+#endif
+}
+void dx_renderTargets::CreateDepthBufferResource(Dx_DepthTarget_Index index)
+{
 	D3D12_RESOURCE_DESC depth_desc{};
-	depth_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	depth_desc.Alignment = 0;
+	depth_desc.MipLevels = 1; 
+	depth_desc.Format = get_depth_format();
 	depth_desc.Width = glConfig.vidWidth;
 	depth_desc.Height = glConfig.vidHeight;
+	depth_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL /*| D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET*/;
 	depth_desc.DepthOrArraySize = 1;
-	depth_desc.MipLevels = 1;
-	depth_desc.Format = get_depth_format();
 	depth_desc.SampleDesc.Count = 1;
 	depth_desc.SampleDesc.Quality = 0;
+	depth_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	depth_desc.Alignment = 0;	
 	depth_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	depth_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
+	
+	
 	D3D12_CLEAR_VALUE optimized_clear_value{};
 	optimized_clear_value.Format = get_depth_format();
 	optimized_clear_value.DepthStencil.Depth = 1.0f;
@@ -293,18 +292,20 @@ void dx_renderTargets::CreateDepthBufferResources()
 		&depth_desc,
 		D3D12_RESOURCE_STATE_DEPTH_WRITE,
 		&optimized_clear_value,
-		IID_PPV_ARGS(&depth_stencil_buffer)));
+		IID_PPV_ARGS(&depth_stencil_buffer[index])));
 
 	D3D12_DEPTH_STENCIL_VIEW_DESC view_desc{};
 	view_desc.Format = get_depth_format();
 	view_desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	view_desc.Flags = D3D12_DSV_FLAG_NONE;
 
-	mDevice->CreateDepthStencilView(depth_stencil_buffer, &view_desc,
-		dsv_heap->GetCPUDescriptorHandleForHeapStart());
+	D3D12_CPU_DESCRIPTOR_HANDLE handle = dsv_heap->GetCPUDescriptorHandleForHeapStart();
+	handle.ptr += index * dsv_descriptor_size;
+	mDevice->CreateDepthStencilView(depth_stencil_buffer[index], &view_desc, handle);
+
+
+	mDepthTextureCurrentState[index] = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 }
-
-
 
 Dx_Image dx_renderTargets::CreateImage(int width, int height, Dx_Image_Format format, int mip_levels, bool repeat_texture, int image_index)
 {
@@ -552,12 +553,28 @@ void dx_renderTargets::CreateSamplerDescriptor(const Vk_Sampler_Def& def, Dx_Sam
 	mDevice->CreateSampler(&sampler_desc, sampler_handle);
 }
 
-D3D12_RESOURCE_BARRIER dx_renderTargets::SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState)
+D3D12_RESOURCE_BARRIER dx_renderTargets::SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState, Dx_RenderTarget_Index index)
 {
-	D3D12_RESOURCE_BARRIER transitionBarrier = get_transition_barrier2(mRenderTargetTexture,
-		mRenderTargetTextureCurrentState, afterState);
+	D3D12_RESOURCE_BARRIER transitionBarrier = get_transition_barrier2(mRenderTargetTexture[index],
+		mRenderTargetTextureCurrentState[index], afterState);
 
-	mRenderTargetTextureCurrentState = afterState;
+	mRenderTargetTextureCurrentState[index] = afterState;
+
+	return transitionBarrier;
+}
+
+bool dx_renderTargets::DoDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index)
+{
+	return mDepthTextureCurrentState[index] != afterState;
+}
+
+D3D12_RESOURCE_BARRIER dx_renderTargets::SetDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index)
+{
+
+	D3D12_RESOURCE_BARRIER transitionBarrier = get_transition_barrier2(depth_stencil_buffer[index],
+		mDepthTextureCurrentState[index], afterState);
+
+	mDepthTextureCurrentState[index] = afterState;
 
 	return transitionBarrier;
 }

@@ -780,7 +780,21 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
 
 	// DX12
 	if (dx.active)
+	{
+		//ComputeNormals
+		if (input->shader->isSky)
+		{
+			for (int i = 0; i < tess.numVertexes; i++)
+			{
+				tess.normal[i][0] = 0.0f;
+				tess.normal[i][1] = -1.0f;
+				tess.normal[i][2] = 0.0f;
+			}
+		}
+
 		dx_bind_geometry();
+	}
+		
 
 	for (int stage = 0; stage < MAX_SHADER_STAGES; stage++)
 	{
@@ -790,6 +804,8 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
 		{
 			break;
 		}
+
+		
 
 		ComputeColors(pStage);
 		ComputeTexCoords(pStage);

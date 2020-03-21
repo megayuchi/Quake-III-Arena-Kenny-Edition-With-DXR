@@ -49,12 +49,14 @@ cbuffer MaterialCB : register(b1)
 };*/
 
 RWTexture2D<float4> RTOutput				: register(u0);
+
 RaytracingAccelerationStructure SceneBVH	: register(t0, space0);
 
 ByteAddressBuffer indices					: register(t1, space0);
 ByteAddressBuffer vertices					: register(t2, space0);
-Texture2D<float4> albedo					: register(t3, space0);
-Texture2D<float> depth					: register(t4, space0);
+Texture2D<float4> albedoTex					: register(t3, space0);
+Texture2D<float4> normalTex					: register(t4, space0);
+Texture2D<float> depth					: register(t5, space0);
 
 struct VertexAttributes
 {

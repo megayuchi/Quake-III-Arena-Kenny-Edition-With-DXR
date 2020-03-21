@@ -103,12 +103,14 @@ float4 doLight(float3 toLight, float3 hitPos, float3 normal, float3 camPos)
 	
 	float light = (lightAngle + spec) * inshadow;
 
-	return float4(light, light, light, 1.0f);
+	float4 lightColor = float4(2.0f, 2.0f, 2.0f, 1.0f);
+
+	return lightColor * light;
 }
 
 float3 WorldPosFromDepth(uint2 screenIndex, float2 texCoord)
 {
-	float depthDist = depth.Load(int3(screenIndex.xy, 0)).r;
+	float depthDist = depth.Load(int3(screenIndex.xy, 0));
 
 	//float z = depthDist * 2.0 - 1.0;
 	float z = depthDist;
@@ -131,24 +133,17 @@ float2 DebugScreenOut(float4 worldPos)
 	float4 viewSpacePosition = mul(viewMatrixInv, worldPos);
 	float4 clipSpacePosition = mul(projMatrixInv, viewSpacePosition);
 
-	//float4 viewSpacePosition = mul(worldPos, viewMatrixInv);
-	//float4 clipSpacePosition = mul(viewSpacePosition, projMatrixInv);
-
 	clipSpacePosition.xy /= clipSpacePosition.w;
-
-	//return (clipSpacePosition.xy *0.25) + 0.75f;
 	return (clipSpacePosition.xy *0.5) + 0.5f;
-	//return clipSpacePosition.xy;
 }
 
-
-
-[shader("raygeneration")]
-void RayGen()
+HitInfo GetViewWorldHit_RayTrace()
 {
 	//this came from https://github.com/acmarrs/IntroToDXR originally 
 	uint2 LaunchIndex = DispatchRaysIndex().xy;
-	uint2 LaunchDimensions = DispatchRaysDimensions().xy;
+	uint2 LaunchDimensions = DispatchRaysDimensions().xy; 
+	LaunchIndex.x = LaunchDimensions.x - LaunchIndex.x;
+	
 
 	float2 d = (((LaunchIndex.xy + 0.5f) / resolution.xy) * 2.f - 1.f);
 	float aspectRatio = (resolution.x / resolution.y);
@@ -158,11 +153,11 @@ void RayGen()
 	ray.Origin = viewOriginAndTanHalfFovY.xyz;
 	ray.Direction = normalize(
 		(d.x * view[0].xyz * viewOriginAndTanHalfFovY.w * aspectRatio)
-		- 
+		-
 		(d.y * view[1].xyz * viewOriginAndTanHalfFovY.w) + view[2].xyz);
 
 	ray.TMin = 0.1f;
-	ray.TMax = 10000.f;	
+	ray.TMax = 10000.f;
 
 	// Trace the ray
 	HitInfo payload;
@@ -177,55 +172,96 @@ void RayGen()
 		ray,
 		payload);
 
-	LaunchIndex.x = LaunchDimensions.x - LaunchIndex.x;
+	return payload;
+}
+
+HitInfo GetViewWorldHit_G_Buffer()
+{
+	HitInfo payload;
+
+	uint2 LaunchIndex = DispatchRaysIndex().xy;
+	uint2 LaunchDimensions = DispatchRaysDimensions().xy;	
+
+	//normal
+	float3 normal0_1 = normalTex.Load(int3(LaunchIndex.xy, 0)).rgb;
+	payload.HitNormal = float4((normal0_1*2.0f)-1.0f, 1.0f);
+
+	//pos
+	float2 screenUvs = LaunchIndex.xy / resolution.xy;
+	float3 worldPos = WorldPosFromDepth(LaunchIndex.xy, screenUvs);
+
+	worldPos += payload.HitNormal * 1.0f;
+	
+	payload.HitPos = float4(worldPos, 1.0f);
+
+	return payload;
+}
+
+[shader("raygeneration")]
+void RayGen()
+{
+	//HitInfo payload = GetViewWorldHit_RayTrace();
+	HitInfo payload = GetViewWorldHit_G_Buffer();
+
+	uint2 LaunchIndex = DispatchRaysIndex().xy;
+	uint2 LaunchDimensions = DispatchRaysDimensions().xy;
+
+	float3 cameraPos = viewOriginAndTanHalfFovY.xyz;
+
+	//LaunchIndex.x = LaunchDimensions.x - LaunchIndex.x;
 	RTOutput[LaunchIndex.xy] = float4(0.0f, 0.0, 0.0f, 1.0f);
 	float2 screenUvs = LaunchIndex.xy / resolution.xy;
 
-	if (0)
+	if (0)//show normals
 	{
 		payload.HitNormal.w = 1.0f;
 		float4 normal0_1 = (payload.HitNormal + float4(1, 1, 1, 0)) * float4(0.5f, 0.5f, 0.5f, 1);
-		//RTOutput[LaunchIndex.xy] = ;//show normals
+		RTOutput[LaunchIndex.xy] = normal0_1;//show normals
 
-		float3 color = albedo.Load(int3(LaunchIndex.xy, 0)).rgb;
-		RTOutput[LaunchIndex.xy] = float4(color, 1.0f);
+		//float3 color = albedo.Load(int3(LaunchIndex.xy, 0)).rgb;
+		//RTOutput[LaunchIndex.xy] = float4(color, 1.0f);
 	}
 	
 	if (payload.HitPos.w != 0.0f)
 	{
-		float4 texColor = albedo.Load(int3(LaunchIndex.xy, 0)).rgba;
+#if 0
+		{//show world pos
+			float4 texColor = albedo.Load(int3(LaunchIndex.xy, 0)).rgba;
+			float3 worldPos = WorldPosFromDepth(LaunchIndex.xy, screenUvs);
 
-		float3 worldPos = WorldPosFromDepth(LaunchIndex.xy, screenUvs);
+			texColor.rgb = worldPos;
+			//texColor.rgb = payload.HitPos.xyz;		
+			RTOutput[LaunchIndex.xy] = texColor;
+		}
+#endif
 
-		texColor.rgb = worldPos;
-		//texColor.rgb = payload.HitPos.xyz;
-		
-		RTOutput[LaunchIndex.xy] = texColor;
-		/*
+#if 0
+		//raster with rays
 		float2 debugPos = DebugScreenOut(float4 (payload.HitPos.xyz, 1.0f));
 		debugPos.y = 1.0f - debugPos.y;
-		
+
 		uint2 debugScreenIndex = debugPos * resolution.xy;
 
-		RTOutput[debugScreenIndex.xy] = float4(1,0.5,0.25,1);
-
-		*/
-		//RTOutput[LaunchIndex.xy] = float4(1, 0.5, 0.25, 1);
+		RTOutput[debugScreenIndex.xy] = float4(1, 0.5, 0.25, 1);
 
 
-		/*
+#endif		
 		
+		float4 texColor = albedoTex.Load(int3(LaunchIndex.xy, 0)).rgba;
 		texColor.rgb = pow(texColor.rgb, DISPLAYGAMMA);
+		//float4 texColor = float4(1,1,1,1);
 		
 
 		float3 toLight = normalize(light.xyz);
-		RTOutput[LaunchIndex.xy] = texColor * doLight(toLight, payload.HitPos.xyz, payload.HitNormal.xyz, ray.Origin.xyz);
+		RTOutput[LaunchIndex.xy] = texColor * doLight(toLight, payload.HitPos.xyz, payload.HitNormal.xyz, cameraPos);
+		//RTOutput[LaunchIndex.xy] = texColor * (dot(toLight, payload.HitNormal.xyz) *0.5f)+0.5f;
 
 		//1st bounce
+		if (1)
 		{
 			float3 origin = payload.HitPos.xyz;
 			float3 normal = payload.HitNormal.xyz;
-			const int nbIte = 16;
+			const int nbIte = 8;
 			const float nbIteInv = 1.0f / float(nbIte);
 			float max = 500.0f;
 
@@ -252,15 +288,14 @@ void RayGen()
 					float3 normal2 = payloadBounce.HitNormal.xyz;
 					
 					float destSq = distanceSq(origin, origin2);
-					float lightAttenuation = clamp(5000.0f / destSq, 0, 1);
+					float lightAttenuation = clamp(20000.0f / destSq, 0, 1);
 
-					RTOutput[LaunchIndex.xy] += texColor * lightAttenuation * nbIteInv * doLight(toLight, origin2, normal2, ray.Origin.xyz);
+					RTOutput[LaunchIndex.xy] += texColor * lightAttenuation * nbIteInv * doLight(toLight, origin2, normal2, cameraPos);
 				}				
 			}
 		}
-		RTOutput[LaunchIndex.xy].rgb = pow(RTOutput[LaunchIndex.xy].rgb, 1.0 / DISPLAYGAMMA);
 
-		*/
+		RTOutput[LaunchIndex.xy].rgb = pow(RTOutput[LaunchIndex.xy].rgb, 1.0 / DISPLAYGAMMA);		
 	}	
 
 	//output green dots at the sky box, just used to make sure my raygen shader is getting called
