@@ -248,27 +248,28 @@ void dx_initialize()
 	//
 	{
 		D3D12_DESCRIPTOR_RANGE ranges[4] = {};
-		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;//SetGraphicsRootDescriptorTable
 		ranges[0].NumDescriptors = 1;
 		ranges[0].BaseShaderRegister = 0;
 
-		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;//SetGraphicsRootDescriptorTable
 		ranges[1].NumDescriptors = 1;
 		ranges[1].BaseShaderRegister = 0;
-
-		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		
+		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;//SetGraphicsRootDescriptorTable
 		ranges[2].NumDescriptors = 1;
 		ranges[2].BaseShaderRegister = 1;
 
-		ranges[3].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+		ranges[3].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;//SetGraphicsRootDescriptorTable
 		ranges[3].NumDescriptors = 1;
 		ranges[3].BaseShaderRegister = 1;
+		
 
-		D3D12_ROOT_PARAMETER root_parameters[5]{};
+		D3D12_ROOT_PARAMETER root_parameters[6]{};
 
-		root_parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+		root_parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS; //SetGraphicsRoot32BitConstants
 		root_parameters[0].Constants.ShaderRegister = 0;
-		root_parameters[0].Constants.Num32BitValues = 32;
+		root_parameters[0].Constants.Num32BitValues = 16+16+16;//world_xform, worldLast_xform, worldViewProj_xform
 		root_parameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
 		for (int i = 1; i < 5; i++) {
@@ -277,6 +278,13 @@ void dx_initialize()
 			root_parameters[i].DescriptorTable.pDescriptorRanges = &ranges[i - 1];
 			root_parameters[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 		}
+
+		root_parameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; //SetGraphicsRoot32BitConstants
+		root_parameters[5].Constants.ShaderRegister = 1;
+		root_parameters[5].Constants.Num32BitValues = 32;
+		root_parameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+		
 
 		D3D12_ROOT_SIGNATURE_DESC root_signature_desc;
 		root_signature_desc.NumParameters = _countof(root_parameters);
@@ -455,6 +463,49 @@ void dx_initialize()
 			dx.images_debug_pipeline = create_pipeline(def);
 		}
 	}
+
+	//shader Constant
+
+	{
+		D3D12_HEAP_PROPERTIES heap_properties;
+		heap_properties.Type = D3D12_HEAP_TYPE_UPLOAD;
+		heap_properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+		heap_properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+		heap_properties.CreationNodeMask = 1;
+		heap_properties.VisibleNodeMask = 1;
+
+		D3D12_RESOURCE_DESC resourceDesc = {};
+		resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		resourceDesc.Alignment = 0;
+		resourceDesc.Height = 1;
+		resourceDesc.DepthOrArraySize = 1;
+		resourceDesc.MipLevels = 1;
+		resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+		resourceDesc.SampleDesc.Count = 1;
+		resourceDesc.SampleDesc.Quality = 0;
+		resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		resourceDesc.Width = sizeof(ShaderConstanceViewCB);
+		resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+		DX_CHECK(dx.device->CreateCommittedResource(
+			&heap_properties,
+			D3D12_HEAP_FLAG_NONE,
+			&resourceDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&dx.shaderConstantView)));
+
+		// Map the constant buffer.
+
+		HRESULT hr = dx.shaderConstantView->Map(0, nullptr, reinterpret_cast<void**>(&dx.shaderConstanceViewCBStart));
+		if (FAILED(hr))
+		{
+			ri.Error(ERR_FATAL, "Error: failed map shader cpnstants");
+		}
+
+		memcpy(dx.shaderConstanceViewCBStart, &dx.shaderConstanceViewCB, sizeof(ShaderConstanceViewCB));
+	}
+
 
 	dx.active = true;
 }
@@ -695,13 +746,18 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 	//
 	D3D12_BLEND_DESC blend_state;
 	blend_state.AlphaToCoverageEnable = FALSE;
-	blend_state.IndependentBlendEnable = FALSE;
+	blend_state.IndependentBlendEnable = TRUE;
 	auto& rt_blend_desc = blend_state.RenderTarget[0];
 	rt_blend_desc.BlendEnable = (def.state_bits & (GLS_SRCBLEND_BITS | GLS_DSTBLEND_BITS)) ? TRUE : FALSE;
 	rt_blend_desc.LogicOpEnable = FALSE;
 
-	blend_state.RenderTarget[1].BlendEnable = FALSE;
-	blend_state.RenderTarget[1].LogicOpEnable = FALSE;
+	for (int i = 1; i < 8; ++i)
+	{
+		blend_state.RenderTarget[i].BlendEnable = FALSE;
+		blend_state.RenderTarget[i].LogicOpEnable = FALSE;
+		blend_state.RenderTarget[i].LogicOp = D3D12_LOGIC_OP_NOOP;
+		blend_state.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	}
 
 	if (rt_blend_desc.BlendEnable) {
 		switch (def.state_bits & GLS_SRCBLEND_BITS) {
@@ -858,15 +914,21 @@ static ID3D12PipelineState* create_pipeline(const Vk_Pipeline_Def& def) {
 	pipeline_desc.DepthStencilState = depth_stencil_state;
 	pipeline_desc.InputLayout = { input_element_desc, def.shader_type == Vk_Shader_Type::single_texture ? 4u : 5u };
 	pipeline_desc.PrimitiveTopologyType = def.line_primitives ? D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE : D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	pipeline_desc.NumRenderTargets = 2;
+	pipeline_desc.NumRenderTargets = 3;
 	pipeline_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	pipeline_desc.RTVFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	pipeline_desc.RTVFormats[2] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	pipeline_desc.DSVFormat = dx_renderTargets::get_depth_format();
 	pipeline_desc.SampleDesc.Count = 1;
 	pipeline_desc.SampleDesc.Quality = 0;
 
 	ID3D12PipelineState* pipeline;
-	DX_CHECK(dx.device->CreateGraphicsPipelineState(&pipeline_desc, IID_PPV_ARGS(&pipeline)));
+	HRESULT hr = dx.device->CreateGraphicsPipelineState(&pipeline_desc, IID_PPV_ARGS(&pipeline));
+	if (FAILED(hr))
+	{		
+		ri.Error(ERR_FATAL, "FAILED CreateGraphicsPipelineState %d", hr);
+	}
+
 	return pipeline;
 }
 
@@ -1223,19 +1285,30 @@ void dx_bind_geometry()
 	//
 	// Specify push constants.
 	//
-	float root_constants[16 + 16 + 12 + 4]; // mvp transform + world+ eye transform + clipping plane in eye space
+	float root_constants[16 + 16 + 16]; // float4x4 world_xform, float4x4 worldLast_xform, float4x4 worldViewProj_xform
 
-	get_mvp_transform(root_constants);
-	int root_constant_count = 16;
+	int root_constant_count = 0;
 
 	for (int i = 0; i < 16; ++i)
 	{
 		root_constants[i + root_constant_count] = dx_world.model_transform[i];
 	}
-	root_constant_count = 32;
+
+	root_constant_count += 16;
+
+	for (int i = 0; i < 16; ++i)
+	{
+		//root_constants[i + root_constant_count] = dx_world.model_transformLast[i];
+		root_constants[i + root_constant_count] = dx_world.model_transform[i];//Don't have the models last transform yet :(
+	}
+
+	root_constant_count += 16;
+	get_mvp_transform(&root_constants[root_constant_count]);
+	root_constant_count += 16;
 
 	if (backEnd.viewParms.isPortal)
 	{
+		return;
 		// Eye space transform.
 		// NOTE: backEnd.or.modelMatrix incorporates s_flipMatrix, so it should be taken into account
 		// when computing clipping plane too.
@@ -1266,11 +1339,22 @@ void dx_bind_geometry()
 		root_constant_count += 16;
 	}
 	dx.command_list->SetGraphicsRoot32BitConstants(0, root_constant_count, root_constants, 0);
+	
+	dx.shaderConstanceViewCB.view = DirectX::XMMATRIX(dx_world.view_transform3D);//not used	
+	dx.shaderConstanceViewCB.viewLast = DirectX::XMMATRIX(dx_world.view_transformLast3D);
+	dx.shaderConstanceViewCB.projMatrix = DirectX::XMMATRIX(dx_world.proj_transform);
 
+	memcpy(dx.shaderConstanceViewCBStart, &dx.shaderConstanceViewCB, sizeof(ShaderConstanceViewCB));
+
+	dx.command_list->SetGraphicsRootConstantBufferView(5, dx.shaderConstantView->GetGPUVirtualAddress());
 }
 
 void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Depth_Range depth_range, bool indexed, bool lines)
 {
+	if (backEnd.viewParms.isPortal)
+	{
+		return;
+	}
 	// color
 	{
 		if ((dx.color_st_elements + tess.numVertexes) * sizeof(color4ub_t) > COLOR_SIZE)
@@ -1379,6 +1463,7 @@ void SetupTagets()
 
 		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_RENDER_TARGET, dx_renderTargets::G_BUFFER_ALBEDO_RT));
 		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_RENDER_TARGET, dx_renderTargets::G_BUFFER_NORMALS_RT));
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_RENDER_TARGET, dx_renderTargets::G_BUFFER_VELOCITY_RT));		
 
 
 		if (dx.dx_renderTargets->DoDepthTextureState(D3D12_RESOURCE_STATE_DEPTH_WRITE, dx_renderTargets::G_BUFFER_DEPTH_RT))
@@ -1391,7 +1476,8 @@ void SetupTagets()
 
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[] = {
 			dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::G_BUFFER_ALBEDO_RT) ,
-			dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::G_BUFFER_NORMALS_RT)
+			dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::G_BUFFER_NORMALS_RT),
+			dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::G_BUFFER_VELOCITY_RT)
 		};
 
 		dx.command_list->OMSetRenderTargets(_countof(rtv_handles), rtv_handles, FALSE, &dsv_handle);
@@ -1482,12 +1568,14 @@ void dx_end_frame() {
 
 		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_ALBEDO_RT));
 		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_NORMALS_RT));
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_VELOCITY_RT));
 		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetDepthTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_DEPTH_RT));
 
 
 		DXR::UpdateAccelerationStructures(dx, *dx.dxr, dx_world);
 		DXR::Build_Command_List(dx, *dx.dxr, dx_world);
 
+		//copy ray trace to backbuffer
 		dx.command_list->ResourceBarrier(1,
 			&get_transition_barrier(dx.dx_renderTargets->render_targets[dx.frame_index],
 				D3D12_RESOURCE_STATE_COPY_SOURCE/*before*/,
@@ -1497,6 +1585,14 @@ void dx_end_frame() {
 
 		dx.command_list->ResourceBarrier(1, &get_transition_barrier(dx.dx_renderTargets->render_targets[dx.frame_index],
 			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT));
+
+		//copy ray trace to lastFrame
+		if (dx.dx_renderTargets->DotRenderTargetTextureState(D3D12_RESOURCE_STATE_COPY_DEST, dx_renderTargets::G_BUFFER_LAST_FRAME_LIGHT_RT))
+		{
+			dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_COPY_DEST, dx_renderTargets::G_BUFFER_LAST_FRAME_LIGHT_RT));
+		}
+		dx.command_list->CopyResource(dx.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_LAST_FRAME_LIGHT_RT), dx.DXROutput);
+		dx.command_list->ResourceBarrier(1, &dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, dx_renderTargets::G_BUFFER_LAST_FRAME_LIGHT_RT));
 
 		drxAsm.EndFrame();
 	}

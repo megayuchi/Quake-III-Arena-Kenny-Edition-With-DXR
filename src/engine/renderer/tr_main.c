@@ -290,10 +290,10 @@ void R_RotateForEntity( const trRefEntity_t *ent, const viewParms_t *viewParms,
 
 	myGlMultMatrix( glMatrix, viewParms->world.modelViewMatrix, or->modelViewMatrix );
 
-	for (int i = 0; i < 16; ++i)//MICK
-	{
-		or ->modelMatrix[i] = glMatrix[i];
-	}
+	Com_Memcpy(or->modelLastMatrix, or ->modelMatrix, 64);
+	Com_Memcpy(or->modelMatrix, glMatrix, 64);
+	Com_Memcpy(or->viewMatrix, glMatrix, 64);
+	
 
 	// calculate the viewer origin in the model's space
 	// needed for fog, specular, and environment mapping
@@ -361,23 +361,26 @@ void R_RotateForViewer (qboolean updateDXR)
 	// to OpenGL's coordinate system (looking down -Z)
 	myGlMultMatrix( viewerMatrix, s_flipMatrix, tr.or.modelViewMatrix );
 	myGlMultMatrix(viewerMatrix, s_flipMatrix, tr. or .viewMatrix);
+	
+
 	if (updateDXR)
 	{
-		Com_Memcpy(dx_world.view_transform, backEnd. or .viewMatrix, 64);
-	}
-	
-	
+		Com_Memcpy(dx_world.view_transform, tr. or .viewMatrix, 64);
 
+
+
+		Com_Memcpy(dx_world.view_transformLast3D, dx_world.view_transform3D, 64);//backup last frames tranform		
+		Com_Memcpy(dx_world.view_transform3D, tr.or.viewMatrix, 64);
+	}
 
 	Com_Memset(&tr.or .modelMatrix, 0, sizeof(tr.or .modelMatrix));
-	tr.or.modelMatrix[0] = 1;
-	tr.or.modelMatrix[5] = 1;
-	tr.or.modelMatrix[10] = 1;
-	tr.or.modelMatrix[15] = 1;
-
+	Com_Memset(&tr. or .modelLastMatrix, 0, sizeof(tr. or .modelLastMatrix));
+	tr. or .modelLastMatrix[0] = tr.or.modelMatrix[0] = 1;
+	tr. or .modelLastMatrix[5] = tr.or.modelMatrix[5] = 1;
+	tr. or .modelLastMatrix[10] = tr.or.modelMatrix[10] = 1;
+	tr. or .modelLastMatrix[15] = tr.or.modelMatrix[15] = 1;
 
 	tr.viewParms.world = tr.or;
-
 }
 
 /*
@@ -385,6 +388,9 @@ void R_RotateForViewer (qboolean updateDXR)
 */
 static void SetFarClip( void )
 {
+	tr.viewParms.zFar = 2048;//HACK fixed far clip
+	return;
+
 	float	farthestCornerDistance = 0;
 	int		i;
 
@@ -441,9 +447,8 @@ static void SetFarClip( void )
 			farthestCornerDistance = distance;
 		}
 	}
-	tr.viewParms.zFar = sqrt( farthestCornerDistance );
+	tr.viewParms.zFar = sqrt( farthestCornerDistance );	
 }
-
 
 /*
 ===============
@@ -1590,11 +1595,8 @@ void R_RenderView (viewParms_t *parms) {
 		for (int i = 0; i < 16; ++i)//MICK remove this copy
 		{			
 			dx_world.proj_transform[i] = proj[i];
-		}
-
-		
-	}
-	
+		}		
+	}	
 
 	R_SortDrawSurfs( tr.refdef.drawSurfs + firstDrawSurf, tr.refdef.numDrawSurfs - firstDrawSurf );
 

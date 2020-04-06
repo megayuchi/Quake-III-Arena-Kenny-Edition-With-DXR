@@ -594,6 +594,9 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs) {
 			// DX12
 			Com_Memcpy(dx_world.modelview_transform, backEnd.or.modelViewMatrix, 64);			
 			Com_Memcpy(dx_world.model_transform, backEnd. or .modelMatrix, 64);
+			Com_Memcpy(dx_world.model_transformLast, backEnd. or .modelLastMatrix, 64);
+
+			Com_Memcpy(dx_world.view_transform, backEnd.or.viewMatrix, 64);
 
 			//
 			// change depthrange if needed
@@ -629,8 +632,8 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs) {
 	Com_Memcpy(vk_world.modelview_transform, backEnd.viewParms.world.modelMatrix, 64);
 
 	// DX12
-	Com_Memcpy(dx_world.modelview_transform, backEnd.viewParms.world.modelViewMatrix, 64);
 	Com_Memcpy(dx_world.model_transform, backEnd.viewParms.world.modelMatrix, 64);
+	Com_Memcpy(dx_world.view_transform, backEnd.viewParms.world.viewMatrix, 64);
 
 	if (depthRange) {
 		qglDepthRange(0, 1);
@@ -638,9 +641,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs) {
 
 	// darken down any stencil shadows
 	RB_ShadowFinish();
-
 }
-
 
 /*
 ============================================================================

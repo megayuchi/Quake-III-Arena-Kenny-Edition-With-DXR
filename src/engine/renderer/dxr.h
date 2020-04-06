@@ -45,11 +45,14 @@ struct MaterialCB
 struct ViewCB
 {
 	DirectX::XMMATRIX view;
+	DirectX::XMMATRIX projMatrix;
 	DirectX::XMMATRIX projMatrixInv;
+	DirectX::XMMATRIX viewMatrix;
 	DirectX::XMMATRIX viewMatrixInv;
 	DirectX::XMFLOAT4 viewOriginAndTanHalfFovY;
 	DirectX::XMFLOAT4 light;
 	DirectX::XMFLOAT2 resolution;
+	UINT32 debug;
 
 	ViewCB()
 	{
@@ -58,6 +61,7 @@ struct ViewCB
 		viewMatrixInv = DirectX::XMMatrixIdentity();
 		viewOriginAndTanHalfFovY = DirectX::XMFLOAT4(0, 0.f, 0.f, 0.f);
 		resolution = DirectX::XMFLOAT2(1280, 720);
+		debug = 0;
 	}
 };
 

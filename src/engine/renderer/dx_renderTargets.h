@@ -22,6 +22,8 @@ public:
 	enum Dx_RenderTarget_Index {
 		G_BUFFER_ALBEDO_RT = 0,
 		G_BUFFER_NORMALS_RT,
+		G_BUFFER_VELOCITY_RT,
+		G_BUFFER_LAST_FRAME_LIGHT_RT,
 		RENDER_TARGET_COUNT
 	};
 
@@ -130,6 +132,7 @@ private:
 	UINT rtv_G_BufferDescriptor_size = (0);
 
 	public:
+	bool DotRenderTargetTextureState(D3D12_RESOURCE_STATES afterState, Dx_RenderTarget_Index index);
 	D3D12_RESOURCE_BARRIER SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState, Dx_RenderTarget_Index index);
 	bool DoDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index);
 	D3D12_RESOURCE_BARRIER SetDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index);

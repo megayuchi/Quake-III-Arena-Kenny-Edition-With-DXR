@@ -167,13 +167,19 @@ namespace DXR
 		DirectX::XMMATRIX invView = DirectX::XMMatrixInverse(NULL, view);
 
 		world.viewCBData->view = XMMatrixTranspose(invView);
+		world.viewCBData->projMatrix = DirectX::XMMATRIX(world.proj_transform);
 		world.viewCBData->projMatrixInv = DirectX::XMMatrixInverse(NULL, DirectX::XMMATRIX(world.proj_transform));
-		world.viewCBData->viewMatrixInv = DirectX::XMMatrixInverse(NULL, DirectX::XMMATRIX(world.view_transform));
-
+		world.viewCBData->viewMatrix = DirectX::XMMATRIX(world.view_transform3D);
+		world.viewCBData->viewMatrixInv = DirectX::XMMatrixInverse(NULL, DirectX::XMMATRIX(world.view_transform3D));
 
 		world.viewCBData->viewOriginAndTanHalfFovY = DirectX::XMFLOAT4(eye.x, eye.y, eye.z, tanf(fov * 0.5f));
 		world.viewCBData->resolution = DirectX::XMFLOAT2((float)d3d.width, (float)d3d.height);
-		world.viewCBData->light = DirectX::XMFLOAT4(0.25f, 0.15f, 1.25f, 1.0f);
+
+		static cvar_t*	dxr_debug = ri.Cvar_Get("dxr_debug", "0", 0);
+		world.viewCBData->debug = dxr_debug->integer;
+
+		static float rand0_1 = 0.0f;
+		world.viewCBData->light = DirectX::XMFLOAT4(0.25f, 0.15f, 1.25f, rand0_1);
 
 		size_t sizedata = sizeof(*world.viewCBData);
 		memcpy(world.viewCBStart, &(*world.viewCBData), sizedata);
@@ -334,7 +340,6 @@ namespace DXR
 			}
 			else
 			{
-
 				ASPreBuildInfo.ScratchDataSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ScratchDataSizeInBytes);
 				ASPreBuildInfo.ResultDataMaxSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ResultDataMaxSizeInBytes);
 
@@ -586,7 +591,7 @@ namespace DXR
 		ranges[1].OffsetInDescriptorsFromTableStart = 2;
 
 		ranges[2].BaseShaderRegister = 0; //register(t0);
-		ranges[2].NumDescriptors = 6;
+		ranges[2].NumDescriptors = 8;
 		ranges[2].RegisterSpace = 0; //register(t0,space0)
 		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		ranges[2].OffsetInDescriptorsFromTableStart = 3;
@@ -980,10 +985,11 @@ namespace DXR
 		// 1 SRV for the vertex buffer
 		// 1 SRV for the texture
 		// 1 SRV for the texture
+		// 1 SRV for the texture
 		// 1 SRV for the depth texture
 
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.NumDescriptors = 9;
+		desc.NumDescriptors = 11;
 		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -1084,6 +1090,31 @@ namespace DXR
 
 			handle.ptr += handleIncrement;
 			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_NORMALS_RT), &textureSRVDesc, handle);
+		}
+		// Create the material texture SRV
+		{
+			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
+			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			textureSRVDesc.Texture2D.MipLevels = 1;
+			textureSRVDesc.Texture2D.MostDetailedMip = 0;
+			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+			handle.ptr += handleIncrement;
+			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_VELOCITY_RT), &textureSRVDesc, handle);
+		}
+
+		// Create the material texture SRV
+		{
+			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
+			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			textureSRVDesc.Texture2D.MipLevels = 1;
+			textureSRVDesc.Texture2D.MostDetailedMip = 0;
+			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+			handle.ptr += handleIncrement;
+			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_LAST_FRAME_LIGHT_RT), &textureSRVDesc, handle);
 		}
 
 		// Create the material depth SRV

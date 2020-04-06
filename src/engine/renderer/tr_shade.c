@@ -784,17 +784,24 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
 		//ComputeNormals
 		if (input->shader->isSky)
 		{
+			//HACK these normals are all wrong, not even computed in the right place
 			for (int i = 0; i < tess.numVertexes; i++)
 			{
-				tess.normal[i][0] = 0.0f;
-				tess.normal[i][1] = -1.0f;
-				tess.normal[i][2] = 0.0f;
+				vec3_t toPos;
+				toPos[0] = 0.0f - tess.xyz[i][0];
+				toPos[1] = 0.0f - tess.xyz[i][1];
+				toPos[2] = 0.0f - tess.xyz[i][2];
+
+				VectorNormalize(toPos);
+				
+				tess.normal[i][0] = toPos[0];
+				tess.normal[i][1] = toPos[1];
+				tess.normal[i][2] = toPos[2];
 			}
 		}
 
 		dx_bind_geometry();
-	}
-		
+	}		
 
 	for (int stage = 0; stage < MAX_SHADER_STAGES; stage++)
 	{
@@ -803,9 +810,7 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
 		if (!pStage)
 		{
 			break;
-		}
-
-		
+		}	
 
 		ComputeColors(pStage);
 		ComputeTexCoords(pStage);

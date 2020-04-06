@@ -205,9 +205,14 @@ void dx_renderTargets::CreateRenderTargets(const int width, const int height)
 {
 	CreateRenderTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, nullptr, D3D12_RESOURCE_STATE_COPY_DEST, G_BUFFER_ALBEDO_RT);
 	CreateRenderTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, nullptr, D3D12_RESOURCE_STATE_COPY_DEST, G_BUFFER_NORMALS_RT);
+	CreateRenderTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, nullptr, D3D12_RESOURCE_STATE_COPY_DEST, G_BUFFER_VELOCITY_RT);
+	CreateRenderTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, nullptr, D3D12_RESOURCE_STATE_COPY_DEST, G_BUFFER_LAST_FRAME_LIGHT_RT);
 #if defined(_DEBUG)
-	mRenderTargetTexture[G_BUFFER_ALBEDO_RT]->SetName(L"G_BUFFER_ALBEDO_RT-Texture");	
+	mRenderTargetTexture[G_BUFFER_ALBEDO_RT]->SetName(L"G_BUFFER_ALBEDO_RT-Texture");		
 	mRenderTargetTexture[G_BUFFER_NORMALS_RT]->SetName(L"G_BUFFER_NORMALS_RT-Texture");
+	mRenderTargetTexture[G_BUFFER_VELOCITY_RT]->SetName(L"G_BUFFER_VELOCITY_RT-Texture");
+	mRenderTargetTexture[G_BUFFER_LAST_FRAME_LIGHT_RT]->SetName(L"G_BUFFER_LAST_FRAME_LIGHT_RT-Texture");
+	
 #endif
 }
 
@@ -561,6 +566,11 @@ D3D12_RESOURCE_BARRIER dx_renderTargets::SetRenderTargetTextureState(D3D12_RESOU
 	mRenderTargetTextureCurrentState[index] = afterState;
 
 	return transitionBarrier;
+}
+
+bool dx_renderTargets::DotRenderTargetTextureState(D3D12_RESOURCE_STATES afterState, Dx_RenderTarget_Index index)
+{
+	return mRenderTargetTextureCurrentState[index] != afterState;
 }
 
 bool dx_renderTargets::DoDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index)

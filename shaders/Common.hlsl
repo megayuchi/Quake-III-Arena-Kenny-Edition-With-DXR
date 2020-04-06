@@ -36,11 +36,14 @@ struct HitInfo
 cbuffer ViewCB : register(b0)
 {
 	matrix view;
+	matrix projMatrix;
 	matrix projMatrixInv;
+	matrix viewMatrix;	
 	matrix viewMatrixInv;
 	float4 viewOriginAndTanHalfFovY;
 	float4 light;
 	float2 resolution;
+	uint debug;
 };
 /*
 cbuffer MaterialCB : register(b1)
@@ -56,7 +59,9 @@ ByteAddressBuffer indices					: register(t1, space0);
 ByteAddressBuffer vertices					: register(t2, space0);
 Texture2D<float4> albedoTex					: register(t3, space0);
 Texture2D<float4> normalTex					: register(t4, space0);
-Texture2D<float> depth					: register(t5, space0);
+Texture2D<float4> velocityTex				: register(t5, space0);
+Texture2D<float4> lastFrameTex				: register(t6, space0);
+Texture2D<float> depth					: register(t7, space0);
 
 struct VertexAttributes
 {

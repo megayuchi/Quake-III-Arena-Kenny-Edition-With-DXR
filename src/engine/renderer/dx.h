@@ -101,6 +101,20 @@ void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Dept
 void dx_begin_frame();
 void dx_end_frame();
 
+struct ShaderConstanceViewCB
+{
+	DirectX::XMMATRIX view;
+	DirectX::XMMATRIX viewLast;
+	DirectX::XMMATRIX projMatrix;
+
+	ShaderConstanceViewCB()
+	{
+		view = DirectX::XMMatrixIdentity();
+		viewLast = DirectX::XMMatrixIdentity();
+		projMatrix = DirectX::XMMatrixIdentity();
+	}
+};
+
 struct Dx_Instance
 {
 	bool active = false;
@@ -162,6 +176,10 @@ struct Dx_Instance
 
 	dx_renderTargets* dx_renderTargets = nullptr;
 
+	ID3D12Resource* shaderConstantView = nullptr;
+	ShaderConstanceViewCB shaderConstanceViewCB;
+	UINT8* shaderConstanceViewCBStart;
+
 	//DXR
 	bool dxr_initialized{ false };
 	D3D12ShaderCompilerInfo* shaderCompiler;
@@ -194,7 +212,13 @@ struct Dx_World {
 	int current_image_indices[2];
 	float modelview_transform[16];
 	float model_transform[16];
+	float model_transformLast[16];
+
 	float view_transform[16];
+	float view_transformLast[16];
+	float view_transform3D[16];
+	float view_transformLast3D[16];
+
 	float proj_transform[16];
 	vec3_t		viewOrg;
 	vec3_t		viewaxisForword;
