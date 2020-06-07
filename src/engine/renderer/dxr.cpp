@@ -67,14 +67,11 @@ namespace DXR
 		d3d.width = vidWidth;
 		d3d.height = vidHeight;
 
-		//d3d.shaderCompiler = new D3DShaders::D3D12ShaderCompilerInfo;
 		d3d.resources = new D3D12Resources;
 		Com_Memset(d3d.resources, 0, sizeof(D3D12Resources));
 
 		world.viewCBData = new ViewCB;
 		world.materialCBData = new MaterialCB;
-
-		//Init_Shader_Compiler(*d3d.shaderCompiler);
 
 		// Create common resources
 		DXR::Create_View_CB(d3d, *d3d.dxr, world);
@@ -1036,7 +1033,6 @@ namespace DXR
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 
 		handle.ptr += handleIncrement;
-		//d3d.device->CreateUnorderedAccessView(d3d.DXROutput, nullptr, &uavDesc, handle);		
 		d3d.device->CreateUnorderedAccessView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::RAY_OUTPUT_RT), nullptr, &uavDesc, handle);
 
 		// Create the DXR Top Level Acceleration Structure SRV

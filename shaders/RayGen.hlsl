@@ -1,37 +1,10 @@
-/* Copyright (c) 2018-2019, NVIDIA CORPORATION. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 
 #include "Common.hlsl"
 #include "Shared.hlsl"
 
-
 #define DISPLAYGAMMA 2.2
 
-#define DEBUGOUTPUTS 1
+#define DEBUGOUTPUTS 0
 
 float4 randomRandText(int2 index)
 {
@@ -232,8 +205,7 @@ void RayGen()
 			RTOutput[LaunchIndex.xy] = float4(worldPos, 1);
 			return;
 		}
-#endif	
-		
+#endif		
 
 		float3 toLight = normalize(light.xyz);
 		RTOutput[LaunchIndex.xy] = float4(0, 0, 0, 1);
@@ -249,7 +221,7 @@ void RayGen()
 
 			for (int i = 0; i < nbIte; i++)
 			{
-				float3 normalBend = normalize(normal + randomHemisphereDir(normal, i)/**0.75f*/);
+				float3 normalBend = normalize(normal + randomHemisphereDir(normal, i));
 
 				HitInfo payloadBounce;
 				payloadBounce.HitNormal = float4(0.f, 0.f, 0.f, 0.f);
@@ -272,12 +244,12 @@ void RayGen()
 					float4 lightAtSecondPoint = 0.0f;
 					for (int j = 0; j < nbIte; j++)
 					{
-						float3 normalBend2 = normalize(normal2 + randomHemisphereDir(normal2, nbIte +j)/* *0.65f*/);
+						float3 normalBend2 = normalize(normal2 + randomHemisphereDir(normal2, nbIte +j));
 
 						HitInfo payloadBounce2;
 						payloadBounce2.HitNormal = float4(0.f, 0.f, 0.f, 0.f);
 						RayDesc rayBounce2;
-						rayBounce2.Origin = origin2;// +(normal2 * 1.0f);
+						rayBounce2.Origin = origin2;
 						rayBounce2.Direction = normalBend2;
 						rayBounce2.TMin = 1.1f;
 						rayBounce2.TMax = max;
@@ -313,8 +285,7 @@ void RayGen()
 					}
 #endif
 					
-					RTOutput[LaunchIndex.xy] += firstLight;
-					
+					RTOutput[LaunchIndex.xy] += firstLight;					
 				}
 			}
 		}

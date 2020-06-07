@@ -198,7 +198,7 @@ Pixel_Output single_texture_ps(Single_Texture_PS_Data data) : SV_TARGET{
 	if (out_color.a < 0.5f) discard;
 #endif
 
-	normal.a = flags;//pack materialId ni noraml.w
+	normal.a = flags;//pack materialId in noraml.w
 
 	Pixel_Output output;
 	output.Albedo = out_color;
@@ -221,7 +221,7 @@ Pixel_Output multi_texture_mul_ps(Multi_Texture_PS_Data data) : SV_TARGET
 	}
 	
 	float4 normal = (data.normal + float4(1, 1, 1, 0)) * float4(0.5f, 0.5f, 0.5f, 1);//show normals	
-	normal.a = flags;//pack materialId ni noraml.w
+	normal.a = flags;//pack materialId in noraml.w
 
 #if defined(ALPHA_TEST_GT0)
 	if (out_color.a == 0.0f) discard;
@@ -259,7 +259,7 @@ Pixel_Output multi_texture_add_ps(Multi_Texture_PS_Data data) : SV_TARGET{
 
 	float4 normal = (data.normal + float4(1, 1, 1, 0)) * float4(0.5f, 0.5f, 0.5f, 1);//show normals	
 	
-	normal.a = flags;//pack materialId ni noraml.w
+	normal.a = flags;//pack materialId in noraml.w
 
 	Pixel_Output output;
 	output.Albedo = out_color * float4(1.0f, 0.0, 0.0, 1.0f);

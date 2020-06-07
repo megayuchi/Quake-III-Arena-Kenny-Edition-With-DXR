@@ -153,9 +153,7 @@ private:
 	ID3D12DescriptorHeap* rtv_G_BufferHeap = (nullptr);//render-target.
 	UINT rtv_G_BufferDescriptor_size = (0);
 
-	public:
-
-	
+	public:	
 	bool DoRenderTargetTextureState(D3D12_RESOURCE_STATES afterState, Dx_RenderTarget_Index index);
 	void SetRenderTargetTextureState(D3D12_RESOURCE_STATES afterState, Dx_RenderTarget_Index index);
 	bool DoDepthTextureState(D3D12_RESOURCE_STATES afterState, Dx_DepthTarget_Index index);

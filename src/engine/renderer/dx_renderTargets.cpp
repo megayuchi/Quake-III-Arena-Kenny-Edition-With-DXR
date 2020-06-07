@@ -61,7 +61,6 @@ void dx_renderTargets::Shutdown()
 
 	rtv_heap->Release();
 	rtv_G_BufferHeap->Release();
-	//	rtv_G_BufferViewHeap->Release();
 	srv_heap->Release();
 	sampler_heap->Release();
 

@@ -43,17 +43,6 @@ cbuffer ViewCBLast : register(b2)
 
 float4 ComputeCachedValue(float2 adjustedCacheFrameTexturePos, float4 Weights);
 
-float3 WorldPosToLastScreen(float4 worldPos)
-{
-	float4 positionView = mul(viewMatrixLast, worldPos);
-	float4 screenPos = mul(projMatrix, positionView);
-
-	float3 pos = screenPos.xyz / screenPos.w;
-	float2 pos0_1 = (pos.xy + 1.0f) * 0.5f;
-
-	return float3(pos0_1, pos.z);
-}
-
 float LinnerDepth(float z)
 {
 	return z;
@@ -64,27 +53,6 @@ float LinnerDepth(float z)
 	viewSpacePosition.xyz /= viewSpacePosition.w;
 
 	return viewSpacePosition.z;
-}
-
-float4 WorldPosFromDepth(uint2 screenIndex)
-{
-	float2 texCoord = float2(screenIndex.xy + 0.5) / resolution.xy;//sample the center of the pixel
-
-	float depthDist = Depth.Load(int3(screenIndex.xy, 0));
-
-	float z = depthDist;
-
-	texCoord.y = 1.0f - texCoord.y;
-
-	float4 clipSpacePosition = float4(texCoord * 2.0 - 1.0, z, 1.0);
-	float4 viewSpacePosition = mul(projMatrixInv, clipSpacePosition);
-
-	// Perspective division
-	viewSpacePosition /= viewSpacePosition.w;
-
-	float4 worldSpacePosition = mul(viewMatrixInv, viewSpacePosition);
-
-	return float4(worldSpacePosition.xyz, depthDist);
 }
 
 float4 GetWeights(in float2 TargetOffset)
@@ -124,7 +92,6 @@ float4 GetWeightsNormal(
 	NdotSampleN *= Sigma;
 
 	float4 normalWeights = pow(saturate(NdotSampleN), SigmaExponent);
-	//float4 normalWeights = saturate(NdotSampleN);
 
 	return normalWeights;
 }
@@ -156,7 +123,6 @@ float4 ComputeWeights(float2 cacheFrameTexturePos, float2 adjustedCacheFrameText
 	WeightsDepth[1] = abs(LinnerDepth(v[1]) - currentDepth) < depthTest;
 	WeightsDepth[2] = abs(LinnerDepth(v[2]) - currentDepth) < depthTest;
 	WeightsDepth[3] = abs(LinnerDepth(v[3]) - currentDepth) < depthTest;
-
 
 	float4 WeightsGui;
 	WeightsGui[0] = NorW[0] == currentNormal.w;
@@ -222,13 +188,11 @@ float4 ComputeOnScreenWeights(float2 uv)
 
 float4 ComputeCachedValue(float2 adjustedCacheFrameTexturePos, float4 Weights)
 {
-	
 	float4 colR = LastLightTex.GatherRed(sampler0, adjustedCacheFrameTexturePos).wzxy;
 	float4 colG = LastLightTex.GatherGreen(sampler0, adjustedCacheFrameTexturePos).wzxy;
 	float4 colB = LastLightTex.GatherBlue(sampler0, adjustedCacheFrameTexturePos).wzxy;
 	float4 colA = LastLightTex.GatherAlpha(sampler0, adjustedCacheFrameTexturePos).wzxy;
 	
-
 	float4 r0 = float4(colR[0], colG[0], colB[0], colA[0]);
 	float4 r1 = float4(colR[1], colG[1], colB[1], colA[1]);
 	float4 r2 = float4(colR[2], colG[2], colB[2], colA[2]);
@@ -279,9 +243,7 @@ void main(uint3 Gid : SV_GroupID, uint3 GTid : SV_GroupThreadID, uint3 DTid : SV
 {
 	float2 velocity = velocityTex[DTid.xy].rg;
 	velocity.y = -velocity.y;
-
 	
-
 	float2 texCoord = float2(DTid.xy + 0.5) / resolution.xy;//sample the center of the pixel
 	float2 cacheFrameTexturePos = texCoord + velocity;
 	float currentDepth = Depth[DTid.xy].r;

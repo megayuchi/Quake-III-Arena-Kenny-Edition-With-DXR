@@ -61,42 +61,19 @@ static const uint NumValuesToLoadPerRowOrColumn = 8 + (FilterKernel::Width - 1);
 groupshared float4 PackedValueDepthCache[NumValuesToLoadPerRowOrColumn][8];   // 16bit float value, depth.
 groupshared float4 FilteredResultCache[NumValuesToLoadPerRowOrColumn][8];    // 32 bit float filteredValue.
 
-
 bool IsWithinBounds(in int2 index, in int2 dimensions)
 {
 	return index.x >= 0 && index.y >= 0 && index.x < dimensions.x && index.y < dimensions.y;
 }
 
 namespace RTAO {
-	//static const float RayHitDistanceOnMiss = 0;
 	static const float InvalidAOCoefficientValue = -1;
-	/*bool HasAORayHitAnyGeometry(in float tHit)
-	{
-		return tHit != RayHitDistanceOnMiss;
-	}*/
 }
 
 bool IsInRange(in float val, in float min, in float max)
 {
 	return (val >= min && val <= max);
 }
-
-uint Float2ToHalf(in float2 val)
-{
-	uint result = 0;
-	result = f32tof16(val.x);
-	result |= f32tof16(val.y) << 16;
-	return result;
-}
-
-float2 HalfToFloat2(in uint val)
-{
-	float2 result;
-	result.x = f16tof32(val);
-	result.y = f16tof32(val >> 16);
-	return result;
-}
-
 
 //-------------------------------------------
 // Find a DTID with steps in between the group threads and groups interleaved to cover all pixels.
@@ -178,7 +155,6 @@ void FilterHorizontally(in uint2 Gid, in uint GI)
 			// Since a row uses 16 lanes, but we only need to calculate the aggregate for the first half (8) lanes,
 			// split the kernel wide aggregation among the first 8 and the second 8 lanes, and then combine them.
 
-
 			// Get the lane index that has the first value for a kernel in this lane.
 			uint Row_KernelStartLaneIndex =
 				(Row_BaseWaveLaneIndex + GTid4x16.x)
@@ -228,10 +204,7 @@ void FilterHorizontally(in uint2 Gid, in uint GI)
 					float depthThreshold = 0.05 + step * 0.001 * abs(int(FilterKernel::Radius) - c);
 					//float w_d = abs(kcDepth - cDepth) <= depthThreshold * kcDepth;
 					//float w_d = abs(kcDepth - cDepth) < 75.0f;
-
 					float w_d = kcDepth == cDepth;
-
-
 					float w = w_h * w_d;
 
 					weightedValueSum += w * cValue;
@@ -323,7 +296,6 @@ void main(uint2 Gid : SV_GroupID, uint2 GTid : SV_GroupThreadID, uint GI : SV_Gr
 		GroupMemoryBarrierWithGroupSync();
 
 		float TsppRatio = min(SamplesPerPixelTex[sDTid.xy], 12) / 12.0f;
-		//TsppRatio = 0.0f;
 		blurStrength = pow(1 - TsppRatio, 1);
 
 		float MinBlurStrength = 0.01;

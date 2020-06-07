@@ -1332,8 +1332,6 @@ void dx_bind_geometry()
 	for (int i = 0; i < 16; ++i)
 	{
 		root_constants[i + root_constant_count] = dx_world.model_transform[i];
-
-		//root_constants[i + root_constant_count] = dx_world.model_transformLast[i];		
 	}
 
 	root_constant_count += 16;
@@ -1341,7 +1339,6 @@ void dx_bind_geometry()
 	for (int i = 0; i < 16; ++i)
 	{
 		root_constants[i + root_constant_count] = dx_world.model_transformLast[i];
-		//root_constants[i + root_constant_count] = dx_world.model_transform[i];//Don't have the models last transform yet :(
 	}
 
 	root_constant_count += 16;
@@ -1606,17 +1603,9 @@ void dx_end_frame()
 void dx_end_frame_DXR()
 {
 	static cvar_t*	dxr_on = ri.Cvar_Get("dxr_on", "0", 0);
-	//static cvar_t*	dxr_dump = ri.Cvar_Get("dxr_dump", "0", 0);
-	static cvar_t*	dxr_light_debug = ri.Cvar_Get("dxr_light_debug", "1", 0);
+	static cvar_t*	dxr_light_debug = ri.Cvar_Get("dxr_light_debug", "0", 0);
 
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	/*if (dxr_dump->value)
-	{
-		dxr_dump->value = 0;
-		drxAsm.WriteAllTopLevelMeshsDebug();
-		//drxAsm.WriteAllBottomLevelMeshsDebug();
-	}*/
 
 	if (dxr_on->value && drxAsm.MeshCount() > 0)
 	{

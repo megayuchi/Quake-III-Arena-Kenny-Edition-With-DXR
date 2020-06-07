@@ -70,9 +70,6 @@ namespace D3DShaders
 			errorMsg.append(infoLog.data());
 
 			OutputDebugStringA(errorMsg.c_str());
-
-
-			exit(-1);//MICK
 			MessageBoxA(nullptr, errorMsg.c_str(), "Error!", MB_OK);
 			
 			return;
