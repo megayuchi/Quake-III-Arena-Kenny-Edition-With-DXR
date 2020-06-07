@@ -252,7 +252,7 @@ Called by both the front end and the back end
 =================
 */
 void R_RotateForEntity( const trRefEntity_t *ent, const viewParms_t *viewParms,
-					   orientationr_t *or ) {
+					   orientationr_t *or, qboolean forCull) {
 	float	glMatrix[16];
 	vec3_t	delta;
 	float	axisLength;
@@ -286,13 +286,20 @@ void R_RotateForEntity( const trRefEntity_t *ent, const viewParms_t *viewParms,
 	glMatrix[3] = 0;
 	glMatrix[7] = 0;
 	glMatrix[11] = 0;
-	glMatrix[15] = 1;
+	glMatrix[15] = 1;	
 
-	myGlMultMatrix( glMatrix, viewParms->world.modelViewMatrix, or->modelViewMatrix );
-
-	Com_Memcpy(or->modelLastMatrix, or ->modelMatrix, 64);
-	Com_Memcpy(or->modelMatrix, glMatrix, 64);
-	Com_Memcpy(or->viewMatrix, glMatrix, 64);
+	myGlMultMatrix(glMatrix, viewParms->world.modelViewMatrix, or ->modelViewMatrix);//a,b,out
+	Com_Memcpy(or ->modelMatrix, glMatrix, 64);//des, src
+	if (forCull)
+	{
+		Com_Memcpy(or ->modelLastMatrix, or ->modelMatrix, 64);
+	}
+	else
+	{
+		GetLastTransformFromCache(ent, or ->modelMatrix, or ->modelLastMatrix, tr.frameCount);
+	}
+	
+	Com_Memcpy(or->viewMatrix, glMatrix, 64);//des, src
 	
 
 	// calculate the viewer origin in the model's space
@@ -365,10 +372,11 @@ void R_RotateForViewer (qboolean updateDXR)
 
 	if (updateDXR)
 	{
+		dx_world.zNear = r_znear->value;
+		dx_world.zFar = backEnd.viewParms.zFar;
+
 		Com_Memcpy(dx_world.view_transform, tr. or .viewMatrix, 64);
-
-
-
+		
 		Com_Memcpy(dx_world.view_transformLast3D, dx_world.view_transform3D, 64);//backup last frames tranform		
 		Com_Memcpy(dx_world.view_transform3D, tr.or.viewMatrix, 64);
 	}
@@ -644,7 +652,7 @@ qboolean R_GetPortalOrientations( drawSurf_t *drawSurf, int entityNum,
 		tr.currentEntity = &tr.refdef.entities[entityNum];
 
 		// get the orientation of the entity
-		R_RotateForEntity( tr.currentEntity, &tr.viewParms, &tr.or );
+		R_RotateForEntity( tr.currentEntity, &tr.viewParms, &tr.or, qtrue );
 
 		// rotate the plane, but keep the non-rotated version for matching
 		// against the portalSurface entities
@@ -762,7 +770,7 @@ static qboolean IsMirror( const drawSurf_t *drawSurf, int entityNum )
 		tr.currentEntity = &tr.refdef.entities[entityNum];
 
 		// get the orientation of the entity
-		R_RotateForEntity( tr.currentEntity, &tr.viewParms, &tr.or );
+		R_RotateForEntity( tr.currentEntity, &tr.viewParms, &tr.or, qtrue);
 
 		// rotate the plane, but keep the non-rotated version for matching
 		// against the portalSurface entities
@@ -1345,7 +1353,7 @@ void R_AddEntitySurfaces (void) {
 
 		case RT_MODEL:
 			// we must set up parts of tr.or for model culling
-			R_RotateForEntity( ent, &tr.viewParms, &tr.or );
+			R_RotateForEntity( ent, &tr.viewParms, &tr.or, qtrue);
 
 			tr.currentModel = R_GetModelByHandle( ent->e.hModel );
 			if (!tr.currentModel) {

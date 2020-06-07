@@ -563,7 +563,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs) {
 				tess.shaderTime = backEnd.refdef.floatTime - tess.shader->timeOffset;
 
 				// set up the transformation matrix
-				R_RotateForEntity(backEnd.currentEntity, &backEnd.viewParms, &backEnd. or );
+				R_RotateForEntity(backEnd.currentEntity, &backEnd.viewParms, &backEnd. or, qfalse );
 
 				// set up the dynamic lighting if needed
 				if (backEnd.currentEntity->needDlights) {

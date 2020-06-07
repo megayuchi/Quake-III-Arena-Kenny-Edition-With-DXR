@@ -67,14 +67,14 @@ namespace DXR
 		d3d.width = vidWidth;
 		d3d.height = vidHeight;
 
-		d3d.shaderCompiler = new D3D12ShaderCompilerInfo;
+		//d3d.shaderCompiler = new D3DShaders::D3D12ShaderCompilerInfo;
 		d3d.resources = new D3D12Resources;
 		Com_Memset(d3d.resources, 0, sizeof(D3D12Resources));
 
 		world.viewCBData = new ViewCB;
 		world.materialCBData = new MaterialCB;
 
-		Init_Shader_Compiler(*d3d.shaderCompiler);
+		//Init_Shader_Compiler(*d3d.shaderCompiler);
 
 		// Create common resources
 		DXR::Create_View_CB(d3d, *d3d.dxr, world);
@@ -83,7 +83,6 @@ namespace DXR
 		// Create DXR specific resources
 		DXR::Create_Index_Vertex_Buffers(dx, *dx.dxr, world);
 		DXR::BuildAccelerationStructure(dx, *dx.dxr, world);
-		DXR::Create_DXR_Output(d3d);
 		Create_CBVSRVUAV_Heap(d3d, *d3d.dxr, world);
 		DXR::Create_RayGen_Program(d3d, *d3d.dxr, *d3d.shaderCompiler);
 		DXR::Create_Miss_Program(d3d, *d3d.dxr, *d3d.shaderCompiler);
@@ -99,39 +98,18 @@ namespace DXR
 		DXR::Create_Top_Level_AS(d3d, *d3d.dxr);
 	}
 
-	void Init_Shader_Compiler(D3D12ShaderCompilerInfo &shaderCompiler)
-	{
-		HRESULT hr = shaderCompiler.DxcDllHelper.Initialize();
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Failed to initialize DxCDllSupport!");
-		}
-
-		hr = shaderCompiler.DxcDllHelper.CreateInstance(CLSID_DxcCompiler, &shaderCompiler.compiler);
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Failed to create DxcCompiler!");
-		}
-
-		hr = shaderCompiler.DxcDllHelper.CreateInstance(CLSID_DxcLibrary, &shaderCompiler.library);
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Failed to create DxcLibrary!");
-		}
-	}
-
 	void Create_Constant_Buffer(Dx_Instance &d3d, ID3D12Resource** buffer, UINT64 size)
 	{
 		D3D12BufferCreateInfo bufferInfo((size + 255) & ~255, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
 		Create_Buffer(d3d, bufferInfo, buffer);
 	}
 
-
 	void Create_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
 		Create_Constant_Buffer(d3d, &world.viewCB, sizeof(ViewCB));
 
 		HRESULT hr = world.viewCB->Map(0, nullptr, reinterpret_cast<void**>(&world.viewCBStart));
+		
 		if (FAILED(hr))
 		{
 			ri.Error(ERR_FATAL, "Error: failed to map View constant buffer!");
@@ -178,8 +156,39 @@ namespace DXR
 		static cvar_t*	dxr_debug = ri.Cvar_Get("dxr_debug", "0", 0);
 		world.viewCBData->debug = dxr_debug->integer;
 
-		static float rand0_1 = 0.0f;
-		world.viewCBData->light = DirectX::XMFLOAT4(0.25f, 0.15f, 1.25f, rand0_1);
+		vec3_t lightDirStart = { 0.25f, 0.15f, 1.25f };
+
+		static cvar_t*	dxr_quakelight = ri.Cvar_Get("dxr_quakelight", "0", 0);
+		if (dxr_quakelight->integer)
+		{
+			lightDirStart[0] = -0.586824119f;
+			lightDirStart[1] = -0.492403835f;
+			lightDirStart[2] = 0.642787635f;
+		}
+
+		vec3_t lightDir;
+		vec3_t lightUp = { 0.0f, 0.0f, 1.0f };
+
+		static float degrees =  0.0f;
+		degrees += 0.5f;
+
+		static cvar_t*	dxr_lightanim = ri.Cvar_Get("dxr_lightanim", "0", 0);
+		if (dxr_lightanim->integer == 0.0)
+		{
+			degrees = 0.0f;
+		}
+		RotatePointAroundVector(lightDir, lightUp, lightDirStart,degrees);
+
+
+		VectorNormalize(lightDir);
+		
+		world.viewCBData->light =  DirectX::XMFLOAT4(lightDir[0], lightDir[1], lightDir[2], 1);
+
+		world.viewCBData->frame++;
+		if (world.viewCBData->frame > 255)
+		{
+			world.viewCBData->frame = 0;
+		}
 
 		size_t sizedata = sizeof(*world.viewCBData);
 		memcpy(world.viewCBStart, &(*world.viewCBData), sizedata);
@@ -562,17 +571,17 @@ namespace DXR
 		DXR::Update_Top_Level_AS(d3d, *d3d.dxr);
 	}
 
-	void Create_Global_RootSignature(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler)
+	void Create_Global_RootSignature(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler)
 	{// Create an empty root signature	
 
 		dxr.globalSignature = Create_Root_Signature({});
 		dxr.globalSignature->SetName(L"Global.pRootSignature");
 	}
 
-	void Create_RayGen_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler)
+	void Create_RayGen_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler)
 	{
 		// Load and compile the ray generation shader
-		dxr.rgs = RtProgram(D3D12ShaderInfo(L"shaders\\RayGen.hlsl", L"", L"lib_6_3"));
+		dxr.rgs = D3DShaders::RtProgram(D3DShaders::D3D12ShaderInfo(L"shaders\\RayGen.hlsl", L"", L"lib_6_3"));
 		D3DShaders::Compile_Shader(shaderCompiler, dxr.rgs);
 
 		// Describe the ray generation root signature
@@ -591,7 +600,7 @@ namespace DXR
 		ranges[1].OffsetInDescriptorsFromTableStart = 2;
 
 		ranges[2].BaseShaderRegister = 0; //register(t0);
-		ranges[2].NumDescriptors = 8;
+		ranges[2].NumDescriptors = 10;
 		ranges[2].RegisterSpace = 0; //register(t0,space0)
 		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		ranges[2].OffsetInDescriptorsFromTableStart = 3;
@@ -614,10 +623,10 @@ namespace DXR
 		dxr.rgs.pRootSignature->SetName(L"rgs.pRootSignature");
 	}
 
-	void Create_Miss_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler)
+	void Create_Miss_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler)
 	{
 		// Load and compile the miss shader
-		dxr.miss = RtProgram(D3D12ShaderInfo(L"shaders\\Miss.hlsl", L"", L"lib_6_3"));
+		dxr.miss = D3DShaders::RtProgram(D3DShaders::D3D12ShaderInfo(L"shaders\\Miss.hlsl", L"", L"lib_6_3"));
 		D3DShaders::Compile_Shader(shaderCompiler, dxr.miss);
 
 		// Create an empty root signature	
@@ -631,10 +640,10 @@ namespace DXR
 		dxr.miss.pRootSignature->SetName(L"miss.pRootSignatureX");
 	}
 
-	void Create_Closest_Hit_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler)
+	void Create_Closest_Hit_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler)
 	{
 		dxr.hit = HitProgram(L"Hit");
-		dxr.hit.chs = RtProgram(D3D12ShaderInfo(L"shaders\\ClosestHit.hlsl", L"", L"lib_6_3"));
+		dxr.hit.chs = D3DShaders::RtProgram(D3DShaders::D3D12ShaderInfo(L"shaders\\ClosestHit.hlsl", L"", L"lib_6_3"));
 		D3DShaders::Compile_Shader(shaderCompiler, dxr.hit.chs);
 
 		D3D12_ROOT_PARAMETER param0 = {};
@@ -987,9 +996,10 @@ namespace DXR
 		// 1 SRV for the texture
 		// 1 SRV for the texture
 		// 1 SRV for the depth texture
+		// 1 SRV for the last depth texture
 
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.NumDescriptors = 11;
+		desc.NumDescriptors = 13;
 		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -999,6 +1009,9 @@ namespace DXR
 		{
 			ri.Error(ERR_FATAL, "Error: failed to create DXR CBV/SRV/UAV descriptor heap!");
 		}
+#if defined(_DEBUG)
+		d3d.cbvSrvUavRayGenHeaps->SetName(L"cbvSrvUavRayGenHeaps");
+#endif
 
 		// Get the descriptor heap handle and increment size
 		D3D12_CPU_DESCRIPTOR_HANDLE handle = d3d.cbvSrvUavRayGenHeaps->GetCPUDescriptorHandleForHeapStart();
@@ -1023,7 +1036,8 @@ namespace DXR
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 
 		handle.ptr += handleIncrement;
-		d3d.device->CreateUnorderedAccessView(d3d.DXROutput, nullptr, &uavDesc, handle);
+		//d3d.device->CreateUnorderedAccessView(d3d.DXROutput, nullptr, &uavDesc, handle);		
+		d3d.device->CreateUnorderedAccessView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::RAY_OUTPUT_RT), nullptr, &uavDesc, handle);
 
 		// Create the DXR Top Level Acceleration Structure SRV
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
@@ -1094,7 +1108,7 @@ namespace DXR
 		// Create the material texture SRV
 		{
 			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			textureSRVDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
 			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 			textureSRVDesc.Texture2D.MipLevels = 1;
 			textureSRVDesc.Texture2D.MostDetailedMip = 0;
@@ -1114,7 +1128,7 @@ namespace DXR
 			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
 			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_LAST_FRAME_LIGHT_RT), &textureSRVDesc, handle);
+			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::POST_LAST_FRAME_LIGHT_RT), &textureSRVDesc, handle);
 		}
 
 		// Create the material depth SRV
@@ -1128,44 +1142,30 @@ namespace DXR
 			handle.ptr += handleIncrement;
 			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetDepthStencilBuffer(dx_renderTargets::G_BUFFER_DEPTH_RT), &textureSRVDesc, handle);
 		}
-	}
 
-	void Create_DXR_Output(Dx_Instance &d3d)
-	{
-		assert(d3d.width > 0);
-		assert(d3d.height > 0);
-		// Describe the DXR output resource (texture)
-		// Dimensions and format should match the swapchain
-		// Initialize as a copy source, since we will copy this buffer's contents to the swapchain
-		D3D12_RESOURCE_DESC desc = {};
-		desc.DepthOrArraySize = 1;
-		desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-		desc.Width = d3d.width;
-		desc.Height = d3d.height;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		desc.MipLevels = 1;
-		desc.SampleDesc.Count = 1;
-		desc.SampleDesc.Quality = 0;
-
-		static const D3D12_HEAP_PROPERTIES defaultHeapProperties =
+		// Create the material last depth SRV
 		{
-			D3D12_HEAP_TYPE_DEFAULT,
-			D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-			D3D12_MEMORY_POOL_UNKNOWN,
-			0, 0
-		};
+			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
+			textureSRVDesc.Format = DXGI_FORMAT_R32_FLOAT;
+			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			textureSRVDesc.Texture2D.MipLevels = 1;
+			textureSRVDesc.Texture2D.MostDetailedMip = 0;
+			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			handle.ptr += handleIncrement;
+			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetDepthStencilBuffer(dx_renderTargets::G_BUFFER_LAST_DEPTH_RT), &textureSRVDesc, handle);
+		}
 
-		// Create the buffer resource
-		HRESULT hr = d3d.device->CreateCommittedResource(&defaultHeapProperties,
-			D3D12_HEAP_FLAG_NONE,
-			&desc, D3D12_RESOURCE_STATE_COPY_SOURCE,
-			nullptr,
-			IID_PPV_ARGS(&d3d.DXROutput));
-		if (FAILED(hr))
 		{
-			ri.Error(ERR_FATAL, "Error: failed to create DXR output buffer!");
+			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
+			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+			textureSRVDesc.Texture2DArray.MipLevels = 1;
+			textureSRVDesc.Texture2DArray.MostDetailedMip = 0;
+			textureSRVDesc.Texture2DArray.FirstArraySlice = 0;
+			textureSRVDesc.Texture2DArray.ArraySize = 64;
+			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			handle.ptr += handleIncrement;
+			d3d.device->CreateShaderResourceView(dx.dx_renderTargets->mNoiseImage.texture, &textureSRVDesc, handle);
 		}
 	}
 
@@ -1173,17 +1173,8 @@ namespace DXR
 	{
 		Update_View_CB(d3d, dxr, world);
 
-		D3D12_RESOURCE_BARRIER OutputBarriers = {};
-
-		// Transition the DXR output buffer to a copy source
-		OutputBarriers.Transition.pResource = d3d.DXROutput;
-		OutputBarriers.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-		OutputBarriers.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		OutputBarriers.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-
-		// Wait for the transitions to complete
-		d3d.command_list->ResourceBarrier(1, &OutputBarriers);
-
+		dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_UNORDERED_ACCESS, dx_renderTargets::RAY_OUTPUT_RT);
+		
 		// Bind the empty root signature
 		d3d.command_list->SetComputeRootSignature(dxr.globalSignature);
 
@@ -1216,13 +1207,8 @@ namespace DXR
 
 		d3d.command_list->SetPipelineState1(dxr.rtpso);
 		d3d.command_list->DispatchRays(&desc);
-
-		// Transition DXR output to a copy source
-		OutputBarriers.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		OutputBarriers.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-
-		// Wait for the transitions to complete
-		d3d.command_list->ResourceBarrier(1, &OutputBarriers);
+		
+		dx.dx_renderTargets->SetRenderTargetTextureState(D3D12_RESOURCE_STATE_COPY_SOURCE, dx_renderTargets::RAY_OUTPUT_RT);
 	}
 
 	void Destroy(Dx_Instance &d3d, DXRGlobal &dxr)

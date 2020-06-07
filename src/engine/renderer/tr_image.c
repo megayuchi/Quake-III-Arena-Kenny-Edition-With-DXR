@@ -22,29 +22,41 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // tr_image.c
 #include "tr_local.h"
 
-static void* q3_stbi_malloc(size_t size) {
-    return ri.Malloc((int)size);
+static void* q3_stbi_malloc(size_t size) 
+{
+	void* p = ri.Malloc((int)size);
+	return p;
 }
-static void q3_stbi_free(void* p) {
-    ri.Free(p);
+
+static void q3_stbi_free(void* p)
+{
+	if (p != nullptr)
+		ri.Free(p);
 }
-static void* q3_stbi_realloc(void* p, size_t old_size, size_t new_size) {
+
+static void* q3_stbi_realloc(void* p, size_t old_size, size_t new_size)
+{
     if (p == nullptr)
         return q3_stbi_malloc(new_size);
 
     void* p_new;
-    if (old_size < new_size) {
+    if (old_size < new_size) 
+	{
         p_new = q3_stbi_malloc(new_size);
         memcpy(p_new, p, old_size);
         q3_stbi_free(p);
-    } else {
+    } 
+	else 
+	{
         p_new = p;
     }
     return p_new;
 }
+
 #define STBI_MALLOC q3_stbi_malloc
 #define STBI_FREE q3_stbi_free
 #define STBI_REALLOC_SIZED q3_stbi_realloc
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "jpeg/stb_image.h"
 
@@ -1519,6 +1531,19 @@ void SaveJPG(char * filename, int quality, int image_width, int image_height, un
     ri.Hunk_FreeTempMemory(buffer);
 }
 
+void LoadPNG(const char *name, byte **pic, int *width, int *height)
+{
+	FILE *f = stbi__fopen(name, "rb");
+	
+	if (!f)
+		return;// stbi__errpuc("can't fopen", "Unable to open file");
+
+	int components;
+
+	*pic = stbi_load_from_file(f, width, height, &components, STBI_rgb_alpha);
+	fclose(f);
+}
+
 //===================================================================
 
 /*
@@ -1944,7 +1969,7 @@ void R_DeleteTextures( void ) {
 	}
 	Com_Memset( tr.images, 0, sizeof( tr.images ) );
 
-	tr.numImages = 0;
+	tr.numImages = 1;//save one for noise
 
 	Com_Memset( glState.currenttextures, 0, sizeof( glState.currenttextures ) );
 

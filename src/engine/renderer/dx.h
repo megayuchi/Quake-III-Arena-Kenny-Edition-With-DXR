@@ -5,7 +5,7 @@
 
 #include <vector>
 #include "dxr_acceleration_structure_manager.h"
-
+#include "dx_shaders.h"
 
 struct ID3D12CommandAllocator;
 struct ID3D12GraphicsCommandList4;
@@ -19,12 +19,15 @@ struct ID3D12RootSignature;
 struct IDXGISwapChain3;
 struct ID3D12_ROOT_SIGNATURE_DESC;
 struct D3D12_ROOT_SIGNATURE_DESC;
-struct ID3D12DescriptorHeap;
 
 class dx_renderTargets;
+class dx_postProcess;
+class dx_postProcessTemporalReproject;
+class dx_postProcessBlur;
+class dx_postProcessComposite;
 
 //DRX
-struct D3D12ShaderCompilerInfo;
+//struct D3D12ShaderCompilerInfo;
 struct DXRGlobal;
 struct D3D12Resources;
 struct ViewCB;
@@ -98,8 +101,15 @@ UINT dxr_MeshVertexCount(int bottomLevelIndex);
 
 void dx_bind_geometry();
 void dx_shade_geometry(ID3D12PipelineState* pipeline, bool multitexture, Vk_Depth_Range depth_range, bool indexed, bool lines);
+void SetupTagets();
+void SetupTagetsDXR();
 void dx_begin_frame();
+void dx_begin_frame_DXR();
 void dx_end_frame();
+void dx_end_frame_DXR();
+void Start3d();
+void End3d();
+void GetLastTransformFromCache(const void *ent, float newTransform[16], float out_lastTransform[16], int frameCount);
 
 struct ShaderConstanceViewCB
 {
@@ -175,6 +185,9 @@ struct Dx_Instance
 	ID3D12PipelineState* images_debug_pipeline = nullptr;
 
 	dx_renderTargets* dx_renderTargets = nullptr;
+	dx_postProcessTemporalReproject* dx_postProcessTemporalReproject = nullptr;
+	dx_postProcessBlur* dx_postProcessBlur = nullptr;
+	dx_postProcessComposite* dx_postProcessComposite = nullptr;
 
 	ID3D12Resource* shaderConstantView = nullptr;
 	ShaderConstanceViewCB shaderConstanceViewCB;
@@ -182,17 +195,17 @@ struct Dx_Instance
 
 	//DXR
 	bool dxr_initialized{ false };
-	D3D12ShaderCompilerInfo* shaderCompiler;
+	D3DShaders::D3D12ShaderCompilerInfo* shaderCompiler;
 
 	ID3D12DescriptorHeap* cbvSrvUavRayGenHeaps;
-	//ID3D12DescriptorHeap* samplerHeap;
-
+	
 	int width;
 	int height;
 
-	ID3D12Resource* DXROutput;
 	DXRGlobal* dxr = {};
 	D3D12Resources* resources = {};
+
+	bool inSide3d = false;
 };
 
 struct Dx_World {
@@ -220,6 +233,10 @@ struct Dx_World {
 	float view_transformLast3D[16];
 
 	float proj_transform[16];
+
+	float zNear;
+	float zFar;
+
 	vec3_t		viewOrg;
 	vec3_t		viewaxisForword;
 	vec2_t		viewFov;

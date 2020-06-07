@@ -44,12 +44,8 @@ cbuffer ViewCB : register(b0)
 	float4 light;
 	float2 resolution;
 	uint debug;
+	uint frame;
 };
-/*
-cbuffer MaterialCB : register(b1)
-{
-	float4 textureResolution;
-};*/
 
 RWTexture2D<float4> RTOutput				: register(u0);
 
@@ -59,9 +55,11 @@ ByteAddressBuffer indices					: register(t1, space0);
 ByteAddressBuffer vertices					: register(t2, space0);
 Texture2D<float4> albedoTex					: register(t3, space0);
 Texture2D<float4> normalTex					: register(t4, space0);
-Texture2D<float4> velocityTex				: register(t5, space0);
+Texture2D<float2> velocityTex				: register(t5, space0);
 Texture2D<float4> lastFrameTex				: register(t6, space0);
-Texture2D<float> depth					: register(t7, space0);
+Texture2D<float> depth						: register(t7, space0);
+Texture2D<float> lastDepth					: register(t8, space0);
+Texture2DArray<float4> NoiseTex				: register(t9);
 
 struct VertexAttributes
 {

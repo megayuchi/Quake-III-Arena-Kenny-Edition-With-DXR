@@ -5,8 +5,8 @@
 * DXR is Microsoft's extension to DirectX-12 that adds Ray tracing. 
 * If you have a GPU that supports Hardware ray tracing like Nvidia's RTX 20X0 series you can have ray traced Q3A.
 
-![screenshot](https://github.com/myounglcd/Quake-III-Arena-Kenny-Edition-With-DXR/blob/master/screenshots/q3a-raytraced03.png?raw=true)
-https://www.youtube.com/watch?v=YGofJni1ZHk
+![screenshot](https://github.com/myounglcd/Quake-III-Arena-Kenny-Edition-With-DXR/blob/master/screenshots/q3a-raytraced04.png?raw=true)
+https://www.youtube.com/playlist?list=PLJGchG921dheDmxj4mQjuzsSN_eB3XJi-
 
 ## Caveats
 * This was only done as a learning exercise.

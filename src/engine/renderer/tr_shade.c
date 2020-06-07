@@ -800,6 +800,12 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
 			}
 		}
 
+		//HACK: using this as a stand in fir a materal ID
+		shaderStage_t *pStage = tess.xstages[0];
+		if (pStage)
+		{ 
+			dx_world.current_image_indices[0] = pStage->bundle[0].image[0]->index;
+		}
 		dx_bind_geometry();
 	}		
 

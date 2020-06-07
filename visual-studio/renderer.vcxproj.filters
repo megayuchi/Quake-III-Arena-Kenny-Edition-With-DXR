@@ -179,6 +179,18 @@
     <ClCompile Include="..\src\engine\renderer\dx_renderTargets.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dx_postProcess.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dx_postProcessTemporalReproject.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dx_postProcessBlur.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dx_postProcessComposite.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\engine\qcommon\cm_public.h">
@@ -227,6 +239,18 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\engine\renderer\dx_renderTargets.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dx_postProcess.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dx_postProcessTemporalReproject.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dx_postProcessBlur.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dx_postProcessComposite.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

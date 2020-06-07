@@ -1090,7 +1090,7 @@ int R_CullLocalBox (vec3_t bounds[2]);
 int R_CullPointAndRadius( vec3_t origin, float radius );
 int R_CullLocalPointAndRadius( vec3_t origin, float radius );
 
-void R_RotateForEntity( const trRefEntity_t *ent, const viewParms_t *viewParms, orientationr_t *or );
+void R_RotateForEntity( const trRefEntity_t *ent, const viewParms_t *viewParms, orientationr_t *or, qboolean forCull);
 
 /*
 ** GL wrapper/helper functions
@@ -1555,6 +1555,8 @@ void RE_StretchPic ( float x, float y, float w, float h,
 void RE_BeginFrame( stereoFrame_t stereoFrame );
 void RE_EndFrame( int *frontEndMsec, int *backEndMsec );
 void SaveJPG(char * filename, int quality, int image_width, int image_height, unsigned char *image_buffer);
+
+void LoadPNG(const char *name, byte **pic, int *width, int *height);
 
 // font stuff
 void R_InitFreeType();

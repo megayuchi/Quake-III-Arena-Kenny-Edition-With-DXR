@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "dxr_acceleration_structure_manager.h"
+#include "dx_shaders.h"
 
 #define SAFE_RELEASE( x ) { if ( x ) { x->Release(); x = NULL; } }
 #define SAFE_DELETE( x ) { if( x ) delete x; x = NULL; }
@@ -53,6 +54,7 @@ struct ViewCB
 	DirectX::XMFLOAT4 light;
 	DirectX::XMFLOAT2 resolution;
 	UINT32 debug;
+	UINT32 frame;
 
 	ViewCB()
 	{
@@ -62,6 +64,7 @@ struct ViewCB
 		viewOriginAndTanHalfFovY = DirectX::XMFLOAT4(0, 0.f, 0.f, 0.f);
 		resolution = DirectX::XMFLOAT2(1280, 720);
 		debug = 0;
+		frame = 0;
 	}
 };
 
@@ -104,39 +107,7 @@ struct D3D12BufferCreateInfo
 		state(D3D12_RESOURCE_STATE_COMMON) {}
 };
 
-struct D3D12ShaderCompilerInfo
-{
-	dxc::DxcDllSupport		DxcDllHelper;
-	IDxcCompiler*			compiler;
-	IDxcLibrary*			library;
 
-	D3D12ShaderCompilerInfo()
-	{
-		compiler = nullptr;
-		library = nullptr;
-	}
-};
-
-struct D3D12ShaderInfo
-{
-	LPCWSTR		filename;
-	LPCWSTR		entryPoint;
-	LPCWSTR		targetProfile;
-
-	D3D12ShaderInfo(LPCWSTR inFilename, LPCWSTR inEntryPoint, LPCWSTR inProfile)
-	{
-		filename = inFilename;
-		entryPoint = inEntryPoint;
-		targetProfile = inProfile;
-	}
-
-	D3D12ShaderInfo()
-	{
-		filename = NULL;
-		entryPoint = NULL;
-		targetProfile = NULL;
-	}
-};
 
 struct D3D12Resources
 {	
@@ -165,48 +136,6 @@ struct AccelerationStructureBuffer
 	}
 };
 
-struct RtProgram
-{
-	RtProgram(D3D12ShaderInfo shaderInfo)
-	{
-		info = shaderInfo;
-		blob = nullptr;
-		subobject.Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
-		exportName = shaderInfo.entryPoint;
-		exportDesc.ExportToRename = nullptr;
-		exportDesc.Flags = D3D12_EXPORT_FLAG_NONE;
-
-		pRootSignature = nullptr;
-	}
-
-	void SetBytecode()
-	{
-		exportDesc.Name = exportName.c_str();
-
-		dxilLibDesc.NumExports = 1;
-		dxilLibDesc.pExports = &exportDesc;
-		dxilLibDesc.DXILLibrary.BytecodeLength = blob->GetBufferSize();
-		dxilLibDesc.DXILLibrary.pShaderBytecode = blob->GetBufferPointer();
-
-		subobject.pDesc = &dxilLibDesc;
-	}
-
-	RtProgram()
-	{
-		blob = nullptr;
-		exportDesc.ExportToRename = nullptr;
-		pRootSignature = nullptr;
-	}
-
-	D3D12ShaderInfo			info = {};
-	IDxcBlob*				blob;
-
-	ID3D12RootSignature*	pRootSignature = nullptr;
-	D3D12_DXIL_LIBRARY_DESC	dxilLibDesc;
-	D3D12_EXPORT_DESC		exportDesc;
-	D3D12_STATE_SUBOBJECT	subobject;
-	std::wstring			exportName;
-};
 
 struct HitProgram
 {
@@ -219,7 +148,7 @@ struct HitProgram
 	}	
 
 	HitProgram() {}
-	RtProgram chs; //ClosestHit
+	D3DShaders::RtProgram chs; //ClosestHit
 
 	std::wstring exportName;
 	D3D12_HIT_GROUP_DESC desc = {};
@@ -234,8 +163,8 @@ struct DXRGlobal
 	ID3D12Resource*									sbt;//Shader table
 	uint32_t										sbtEntrySize;
 
-	RtProgram										rgs;//RayGen Shader
-	RtProgram										miss;
+	D3DShaders::RtProgram										rgs;//RayGen Shader
+	D3DShaders::RtProgram										miss;
 	HitProgram										hit;
 
 	ID3D12RootSignature*							globalSignature;
@@ -253,7 +182,6 @@ namespace DXR
 {
 	void SetupDXR(Dx_Instance &d3d, Dx_World &world, int vidWidth, int vidHeight);
 	void BuildAccelerationStructure(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
-	void Init_Shader_Compiler(D3D12ShaderCompilerInfo &shaderCompiler);
 
 	void Create_Constant_Buffer(Dx_Instance &d3d, ID3D12Resource** buffer, UINT64 size);
 	void Create_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
@@ -267,15 +195,14 @@ namespace DXR
 	void Update_Top_Level_AS(Dx_Instance &d3d, DXRGlobal &dxr);
 	void UpdateAccelerationStructures(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 
-	void Create_RayGen_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler);
-	void Create_Miss_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler);
-	void Create_Closest_Hit_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler);
-	void Create_Global_RootSignature(Dx_Instance &d3d, DXRGlobal &dxr, D3D12ShaderCompilerInfo &shaderCompiler);
+	void Create_RayGen_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler);
+	void Create_Miss_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler);
+	void Create_Closest_Hit_Program(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler);
+	void Create_Global_RootSignature(Dx_Instance &d3d, DXRGlobal &dxr, D3DShaders::D3D12ShaderCompilerInfo &shaderCompiler);
 	void Create_Pipeline_State_Object(Dx_Instance &d3d, DXRGlobal &dxr);
 	void Create_Shader_Table(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 	void Update_Shader_Table(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 	void Create_CBVSRVUAV_Heap(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
-	void Create_DXR_Output(Dx_Instance &d3d);
 
 	void Build_Command_List(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 

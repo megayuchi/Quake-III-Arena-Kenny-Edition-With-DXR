@@ -44,7 +44,7 @@ namespace D3DShaders
 
 		// Compile the shader
 		IDxcOperationResult* result;
-		hr = compilerInfo.compiler->Compile(pShaderText, info.filename, L"", info.targetProfile, nullptr, 0, nullptr, 0, dxcIncludeHandler, &result);
+		hr = compilerInfo.compiler->Compile(pShaderText, info.filename, info.entryPoint, info.targetProfile, nullptr, 0, nullptr, 0, dxcIncludeHandler, &result);
 		if (FAILED(hr))
 		{
 			ri.Error(ERR_FATAL, "Error: failed to compile shader!");
@@ -69,7 +69,12 @@ namespace D3DShaders
 			std::string errorMsg = "Shader Compiler Error:\n";
 			errorMsg.append(infoLog.data());
 
+			OutputDebugStringA(errorMsg.c_str());
+
+
+			exit(-1);//MICK
 			MessageBoxA(nullptr, errorMsg.c_str(), "Error!", MB_OK);
+			
 			return;
 		}
 
