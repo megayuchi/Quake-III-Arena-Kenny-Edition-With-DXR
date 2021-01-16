@@ -97,7 +97,11 @@
   <ItemGroup>
     <ClCompile Include="..\src\engine\renderer\dx.cpp" />
     <ClCompile Include="..\src\engine\renderer\dxr.cpp" />
+    <ClCompile Include="..\src\engine\renderer\dxr_acceleration_model.cpp" />
     <ClCompile Include="..\src\engine\renderer\dxr_acceleration_structure_manager.cpp" />
+    <ClCompile Include="..\src\engine\renderer\dxr_heapManager.cpp" />
+    <ClCompile Include="..\src\engine\renderer\dxr_lights.cpp" />
+    <ClCompile Include="..\src\engine\renderer\dxr_pipelineStateObject.cpp" />
     <ClCompile Include="..\src\engine\renderer\dx_postProcess.cpp" />
     <ClCompile Include="..\src\engine\renderer\dx_postProcessBlur.cpp" />
     <ClCompile Include="..\src\engine\renderer\dx_postProcessComposite.cpp" />
@@ -158,7 +162,11 @@
     <ClInclude Include="..\src\engine\qcommon\cm_public.h" />
     <ClInclude Include="..\src\engine\renderer\dx.h" />
     <ClInclude Include="..\src\engine\renderer\dxr.h" />
+    <ClInclude Include="..\src\engine\renderer\dxr_acceleration_model.h" />
     <ClInclude Include="..\src\engine\renderer\dxr_acceleration_structure_manager.h" />
+    <ClInclude Include="..\src\engine\renderer\dxr_heapManager.h" />
+    <ClInclude Include="..\src\engine\renderer\dxr_lights.h" />
+    <ClInclude Include="..\src\engine\renderer\dxr_pipelineStateObject.h" />
     <ClInclude Include="..\src\engine\renderer\dx_postProcess.h" />
     <ClInclude Include="..\src\engine\renderer\dx_postProcessBlur.h" />
     <ClInclude Include="..\src\engine\renderer\dx_postProcessComposite.h" />

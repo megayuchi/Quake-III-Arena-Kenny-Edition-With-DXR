@@ -265,7 +265,8 @@ R_AddMD3Surfaces
 
 =================
 */
-void R_AddMD3Surfaces(trRefEntity_t *ent) {
+void R_AddMD3Surfaces(trRefEntity_t *ent)
+{
 	int				i;
 	md3Header_t		*header = 0;
 	md3Surface_t	*surface = 0;
@@ -330,48 +331,26 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 	// see if we are in a fog volume
 	//
 	fogNum = R_ComputeFogNum(header, ent);
-
-	bool addingToDxr = false;
-
-	if (-1 == pModel->bottomLevelIndexDxr[lod] && !personalModel)
-	{
-		if (1 < header->numFrames)
-		{
-			pModel->bottomLevelIndexDxr[lod] = drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::DYNAMIC_MESH);
-		}
-		else
-		{
-			pModel->bottomLevelIndexDxr[lod] = drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::STATIC_MESH);
-		}
-
-		addingToDxr = true;
-	}
-
+	
 	bool animated = false;
 	if (ent->e.oldframe != ent->e.frame) {
 		animated = true;
 	}
-
-	bool updating = !addingToDxr && animated;
-
-	if (!personalModel)
-	{
-		if (updating)
-		{
-			drx_ResetMeshForUpdating(pModel->bottomLevelIndexDxr[lod]);
-		}
-	}
-
+	
 	//
 	// draw all surfaces
 	//
+
 	surface = (md3Surface_t *)((byte *)header + header->ofsSurfaces);
 	for (i = 0; i < header->numSurfaces; i++)
 	{
-		if (ent->e.customShader) {
+		const int dxrSurfaceId = i % MD3_MAX_DXR_SURFACES;//Dont't think it will ever get this high, just just incase 
+		if (ent->e.customShader)
+		{
 			shader = R_GetShaderByHandle(ent->e.customShader);
 		}
-		else if (ent->e.customSkin > 0 && ent->e.customSkin < tr.numSkins) {
+		else if (ent->e.customSkin > 0 && ent->e.customSkin < tr.numSkins)
+		{
 			skin_t *skin;
 			int		j;
 
@@ -402,7 +381,29 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 			shader = tr.shaders[md3Shader->shaderIndex];
 		}
 
+		bool updating =  animated;
+		bool addingToDxr = false;
+		if (-1 == pModel->bottomLevelIndexDxr[lod][dxrSurfaceId] && !personalModel)
+		{
+			int surfaceIndex = shader->stages[0]->bundle[0].image[0]->index;
+			int texWidth = shader->stages[0]->bundle[0].image[0]->uploadWidth;
+			int texHeight = shader->stages[0]->bundle[0].image[0]->uploadHeight;
 
+			dxr_acceleration_model::meshType_t meshType = 1 < header->numFrames ? dxr_acceleration_model::DYNAMIC_MESH : dxr_acceleration_model::STATIC_MESH;
+			pModel->bottomLevelIndexDxr[lod][dxrSurfaceId] = dxr_AddBottomLevelMesh(meshType, surfaceIndex, texWidth, texHeight);
+			
+			addingToDxr = true;
+			updating = false;//getting Added not Updated
+		}		
+
+		if (!personalModel)
+		{
+			if (updating)
+			{
+				dxr_ResetMeshForUpdating(pModel->bottomLevelIndexDxr[lod][dxrSurfaceId]);
+			}
+		}
+		
 		// we will add shadows even if the main object isn't visible in the view
 
 		// stencil shadows can't do personal models unless I polyhedron clip
@@ -451,6 +452,8 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 
 				int frameNumber = ent->e.frame;
 
+				float *texCoords = (float *)((byte *)surface + surface->ofsSt);
+
 				newXyz = (short *)((byte *)surface + surface->ofsXyzNormals)
 					+ (frameNumber * surface->numVerts * 4);
 				newNormals = newXyz + 3;
@@ -465,13 +468,13 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 					indexes = (unsigned int *)((byte *)surface + surface->ofsTriangles);
 					numIndexes = surface->numTriangles * 3;
 
-					drx_AddBottomLeveIndexesData(indexes, numIndexes);
+					dxr_AddBottomLeveIndexesData(pModel->bottomLevelIndexDxr[lod][dxrSurfaceId], indexes, numIndexes);
 				}
 
 				if (backlerp == 0)
 				{
 					for (vertNum = 0; vertNum < numVerts; vertNum++,
-						newXyz += 4, newNormals += 4)
+						newXyz += 4, newNormals += 4, texCoords += 2)
 					{
 						outXyz[0] = newXyz[0] * newXyzScale;
 						outXyz[1] = newXyz[1] * newXyzScale;
@@ -482,22 +485,11 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 						lat *= (FUNCTABLE_SIZE / 256);
 						lng *= (FUNCTABLE_SIZE / 256);
 
-						// decode X as cos( lat ) * sin( long )
-						// decode Y as sin( lat ) * sin( long )
-						// decode Z as cos( long )
-
 						outNormal[0] = tr.sinTable[(lat + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK] * tr.sinTable[lng];
 						outNormal[1] = tr.sinTable[lat] * tr.sinTable[lng];
 						outNormal[2] = tr.sinTable[(lng + (FUNCTABLE_SIZE / 4))&FUNCTABLE_MASK];
-
-						if (updating)
-						{
-							drx_UpdateBottomLevelVertex(pModel->bottomLevelIndexDxr[lod], outXyz, outNormal);
-						}
-						else
-						{
-							drx_AddBottomLevelVertex(outXyz, outNormal);
-						}
+						
+						dxr_AddBottomLevelVertex(pModel->bottomLevelIndexDxr[lod][dxrSurfaceId], outXyz, outNormal, texCoords);
 					}
 				}
 				else
@@ -513,8 +505,10 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 					float oldXyzScale = MD3_XYZ_SCALE * backlerp;
 					float oldNormalScale = backlerp;
 
+					float *texCoords = (float *)((byte *)surface + surface->ofsSt);
+
 					for (vertNum = 0; vertNum < numVerts; vertNum++,
-						oldXyz += 4, newXyz += 4, oldNormals += 4, newNormals += 4)
+						oldXyz += 4, newXyz += 4, oldNormals += 4, newNormals += 4, texCoords += 2)
 					{
 						vec3_t uncompressedOldNormal, uncompressedNewNormal;
 
@@ -546,26 +540,19 @@ void R_AddMD3Surfaces(trRefEntity_t *ent) {
 						outNormal[2] = uncompressedOldNormal[2] * oldNormalScale + uncompressedNewNormal[2] * newNormalScale;
 
 						VectorNormalize(outNormal);
-
-						if (updating)
-						{
-							drx_UpdateBottomLevelVertex(pModel->bottomLevelIndexDxr[lod], outXyz, outNormal);
-						}
-						else
-						{
-							drx_AddBottomLevelVertex(outXyz, outNormal);
-						}
+						
+						dxr_AddBottomLevelVertex(pModel->bottomLevelIndexDxr[lod][dxrSurfaceId], outXyz, outNormal, texCoords);
 					}
 				}
 			}
 		}
 
-		surface = (md3Surface_t *)((byte *)surface + surface->ofsEnd);
-	}
+		if (!personalModel)
+		{
+			dxr_AddTopLevelIndexWithTransform(pModel->bottomLevelIndexDxr[lod][dxrSurfaceId], ent->e.axis, ent->e.origin);
+		}
 
-	if (!personalModel)
-	{
-		drx_AddTopLevelIndexWithTransform(pModel->bottomLevelIndexDxr[lod], ent->e.axis, ent->e.origin);
-	}
+		surface = (md3Surface_t *)((byte *)surface + surface->ofsEnd);
+	}	
 }
 

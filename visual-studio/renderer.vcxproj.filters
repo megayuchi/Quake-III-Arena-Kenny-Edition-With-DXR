@@ -191,6 +191,18 @@
     <ClCompile Include="..\src\engine\renderer\dx_postProcessComposite.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dxr_lights.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dxr_pipelineStateObject.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dxr_heapManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\engine\renderer\dxr_acceleration_model.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\engine\qcommon\cm_public.h">
@@ -251,6 +263,18 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\engine\renderer\dx_postProcessComposite.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dxr_lights.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dxr_pipelineStateObject.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dxr_heapManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\engine\renderer\dxr_acceleration_model.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

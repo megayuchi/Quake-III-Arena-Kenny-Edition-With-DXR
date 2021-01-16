@@ -883,6 +883,8 @@ image_t *R_CreateImage( const char *name, const byte *pic, int width, int height
 	// DX12
 	if (dx.active) {
 		dx_world.images[image->index] = upload_dx_image(upload_data, glWrapClampMode == GL_REPEAT, image->index);
+		image->uploadWidth = upload_data.base_level_width;
+		image->uploadHeight = upload_data.base_level_height;
 	}
 
 	if (isLightmap) {

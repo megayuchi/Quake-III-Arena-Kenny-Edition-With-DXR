@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "dxr_acceleration_structure_manager.h"
+#include "dxr_heapManager.h"
 #include "dx_shaders.h"
 
 #define SAFE_RELEASE( x ) { if ( x ) { x->Release(); x = NULL; } }
@@ -37,12 +38,12 @@ static const D3D12_HEAP_PROPERTIES DefaultHeapProperties =
 //--------------------------------------------------------------------------------------
 // Standard D3D12
 //--------------------------------------------------------------------------------------
-
+/*
 struct MaterialCB
 {
 	DirectX::XMFLOAT4 resolution;
 };
-
+*/
 struct ViewCB
 {
 	DirectX::XMMATRIX view;
@@ -67,47 +68,6 @@ struct ViewCB
 		frame = 0;
 	}
 };
-
-struct D3D12BufferCreateInfo
-{
-	UINT64 size;
-	UINT64 alignment;
-	D3D12_HEAP_TYPE heapType;
-	D3D12_RESOURCE_FLAGS flags;
-	D3D12_RESOURCE_STATES state;
-
-	D3D12BufferCreateInfo() :
-		size(0), alignment(0),
-		heapType(D3D12_HEAP_TYPE_DEFAULT),
-		flags(D3D12_RESOURCE_FLAG_NONE),
-		state(D3D12_RESOURCE_STATE_COMMON) {}
-
-	D3D12BufferCreateInfo(UINT64 InSize, UINT64 InAlignment, D3D12_HEAP_TYPE InHeapType, D3D12_RESOURCE_FLAGS InFlags, D3D12_RESOURCE_STATES InState) :
-		size(InSize), alignment(InAlignment),
-		heapType(InHeapType),
-		flags(InFlags),
-		state(InState) {}
-
-	D3D12BufferCreateInfo(UINT64 InSize, D3D12_RESOURCE_FLAGS InFlags, D3D12_RESOURCE_STATES InState) :
-		size(InSize), alignment(0),
-		heapType(D3D12_HEAP_TYPE_DEFAULT),
-		flags(InFlags),
-		state(InState) {}
-
-	D3D12BufferCreateInfo(UINT64 InSize, D3D12_HEAP_TYPE InHeapType, D3D12_RESOURCE_STATES InState) :
-		size(InSize), alignment(0),
-		heapType(InHeapType),
-		flags(D3D12_RESOURCE_FLAG_NONE),
-		state(InState) {}
-
-	D3D12BufferCreateInfo(UINT64 InSize, D3D12_RESOURCE_FLAGS InFlags) :
-		size(InSize), alignment(0),
-		heapType(D3D12_HEAP_TYPE_DEFAULT),
-		flags(InFlags),
-		state(D3D12_RESOURCE_STATE_COMMON) {}
-};
-
-
 
 struct D3D12Resources
 {	
@@ -135,7 +95,6 @@ struct AccelerationStructureBuffer
 		pInstanceDesc = NULL;
 	}
 };
-
 
 struct HitProgram
 {
@@ -173,19 +132,17 @@ struct DXRGlobal
 	ID3D12StateObjectProperties*					rtpsoInfo;
 
 	dxr_acceleration_structure_manager				acceleration_structure_manager;
+	dxr_heapManager*								dxr_heapManager;
 };
-
-void Create_Buffer(Dx_Instance &d3d, D3D12BufferCreateInfo& info, ID3D12Resource** ppResource);
-
 
 namespace DXR
 {
+	#define MEGA_INDEX_VERTEX_BUFFER_SIZE 0x0000000000ffffff //big ;) got to hold all the polys
+
 	void SetupDXR(Dx_Instance &d3d, Dx_World &world, int vidWidth, int vidHeight);
 	void BuildAccelerationStructure(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 
-	void Create_Constant_Buffer(Dx_Instance &d3d, ID3D12Resource** buffer, UINT64 size);
 	void Create_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
-	void Create_Material_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 
 	void Update_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 
@@ -202,7 +159,6 @@ namespace DXR
 	void Create_Pipeline_State_Object(Dx_Instance &d3d, DXRGlobal &dxr);
 	void Create_Shader_Table(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 	void Update_Shader_Table(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
-	void Create_CBVSRVUAV_Heap(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 
 	void Build_Command_List(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world);
 

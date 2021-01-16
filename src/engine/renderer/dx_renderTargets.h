@@ -136,14 +136,12 @@ private:
 	ID3D12DescriptorHeap* rtv_heap = (nullptr);//render-target view.
 	UINT rtv_descriptor_size = (0);
 
-	ID3D12DescriptorHeap* srv_heap = (nullptr);
+	ID3D12DescriptorHeap* srv_heap = (nullptr);//Game Textures
 	UINT srv_descriptor_size = (0);
 
 	ID3D12DescriptorHeap* sampler_heap = (nullptr);//Dx_Sampler_Index
 	UINT sampler_descriptor_size = (0);
 
-
-//public:
 	//render targets
 	ID3D12Resource* mRenderTargetTexture[RENDER_TARGET_COUNT];
 

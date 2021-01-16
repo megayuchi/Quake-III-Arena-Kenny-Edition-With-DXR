@@ -3,6 +3,8 @@
 
 #include <chrono>
 #include <map>
+#include <vector>
+#include <array>
 
 #ifdef ENABLE_DX12
 
@@ -15,6 +17,7 @@
 #include "dx_postProcessTemporalReproject.h"
 #include "dx_postProcessBlur.h"
 #include "dx_postProcessComposite.h"
+#include "dxr_lights.h"
 
 #include <sstream>
 
@@ -43,8 +46,6 @@ const int INDEX_BUFFER_SIZE = 2 * 1024 * 1024;
 	if (FAILED(hr)) \
 		ri.Error(ERR_FATAL, "Direct3D: error returned by %s", #function_call); \
 }
-
-
 
 static void get_hardware_adapter(IDXGIFactory4* factory, IDXGIAdapter1** adapter)
 {
@@ -102,22 +103,25 @@ void dx_initialize()
 #ifdef ENABLE_DXR
 	dx.dxr = new DXRGlobal;
 	Com_Memset(dx.dxr, 0, sizeof(DXRGlobal));
+	dx.dxr->dxr_heapManager = new dxr_heapManager;
 #endif
 
 	// enable validation in debug configuration
 #if defined(_DEBUG)
-	ID3D12Debug* debug_controller;
-	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)))) {
+	/*ID3D12Debug* debug_controller;
+	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller))))
+	{
 		debug_controller->EnableDebugLayer();
 		debug_controller->Release();
 	}
+	*/
 #endif
 
 
 
 	IDXGIFactory4* factory;
 	DX_CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
-
+	
 	// Create device.
 	{
 		IDXGIAdapter1* hardware_adapter;
@@ -164,6 +168,9 @@ void dx_initialize()
 
 	dx.dx_postProcessComposite = new dx_postProcessComposite();
 	dx.dx_postProcessComposite->Setup(dx.device, dx);
+
+	dx.dxr_lights = new dxr_lights();
+	dx.dxr_lights->Setup(dx.device, dx);
 
 	//
 	// Create swap chain.
@@ -467,7 +474,6 @@ void dx_initialize()
 	}
 
 	//shader Constant
-
 	{
 		D3D12_HEAP_PROPERTIES heap_properties;
 		heap_properties.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -548,6 +554,7 @@ void dx_shutdown() {
 	::CloseHandle(dx.fence_event);
 
 #ifdef ENABLE_DXR
+	delete dx.dxr->dxr_heapManager;
 	DXR::Destroy(dx, *dx.dxr);
 	delete dx.dxr;
 #endif
@@ -1065,7 +1072,7 @@ static D3D12_RECT get_scissor_rect() {
 void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t color)
 {
 	if (!dx.active)
-		return;	
+		return;
 
 	D3D12_RECT clear_rect = get_scissor_rect();
 
@@ -1078,7 +1085,7 @@ void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t col
 		dx.command_list->ClearRenderTargetView(dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::POST_SPP_RT), clearColor, 1, &clear_rect);
 		dx.command_list->ClearRenderTargetView(dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::POST_LAST_SPP_RT), clearColor, 1, &clear_rect);
 		dx.command_list->ClearRenderTargetView(dx.dx_renderTargets->GetRenderTargetTextureHandle(dx_renderTargets::POST_LAST_FRAME_LIGHT_RT), clearColor, 1, &clear_rect);
-		
+
 	}
 
 	if (!clear_depth_stencil && !clear_color)
@@ -1113,83 +1120,62 @@ void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t col
 	}
 }
 
-void drx_Reset()
+void dxr_Reset()
 {
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
 	drxAsm.Reset();
 }
 
-void drx_AddBottomLevelMeshForWorld()
+int dxr_AddBottomLevelMesh(dxr_acceleration_model::meshType_t meshType, int surfaceIndex, int width, int height)
+{
+	//Don't check if we already have this surface type, don't want to "weld" because it may move
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	return drxAsm.AddMesh(meshType, surfaceIndex, width, height);
+}
+
+void dxr_AddBottomLevelMeshData(int bottomLevelIndex, unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal)
 {
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	auto& model = drxAsm.GetModel();
+	model.AddIndexesData(bottomLevelIndex, indices, numIndices);
+	model.AddVertexData(bottomLevelIndex, points, normal, numPoints, VERTEXSIZE);
+}
 
-	if (drxAsm.MeshCount() <= 0)
+void dxr_AddBottomLeveIndexesData(int bottomLevelIndex, unsigned *indices, int numIndices)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	
+	auto& model = drxAsm.GetModel();
+	model.AddIndexesData(bottomLevelIndex, indices, numIndices);
+}
+
+void dxr_AddBottomLevelIndex(int bottomLevelIndex, unsigned index)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	auto& model = drxAsm.GetModel();
+	model.AddIndex(bottomLevelIndex, index);
+}
+
+void dxr_AddBottomLevelVertex(int bottomLevelIndex, float *xyz, float* normal, float* uv)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	auto& model = drxAsm.GetModel();
+	model.AddVertexData(bottomLevelIndex, xyz, normal, uv);
+}
+
+void dxr_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], float origin[3])
+{
+	if (dx.dxr_initialized)
 	{
-		drxAsm.AddMesh(dxr_acceleration_structure_manager::STATIC_MESH);
+		dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+		if (bottomLevelIndex != -1)
+		{
+			drxAsm.AddInstanceWithTransform(bottomLevelIndex, axis, origin);
+		}
 	}
 }
 
-int drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::meshType_t meshType)
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-	return drxAsm.AddMesh(meshType);
-}
-
-void drx_AddBottomLevelMeshData(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal)
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	drxAsm.AddIndexesData(indices, numIndices);
-	drxAsm.AddVertexData(points, normal, numPoints, VERTEXSIZE);
-}
-
-void drx_AddBottomLeveIndexesData(unsigned *indices, int numIndices)
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	drxAsm.AddIndexesData(indices, numIndices);
-}
-
-void drx_AddBottomLevelIndex(unsigned index)
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	drxAsm.AddIndex(index);
-}
-
-void drx_AddBottomLevelVertex(float	*xyz, float* normal)
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	drxAsm.AddVertexData(xyz, normal);
-}
-
-void drx_UpdateBottomLevelVertex(int bottomLevelIndex, float *xyz, float* normal)
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	drxAsm.UpdateVertexData(bottomLevelIndex, xyz, normal);
-}
-
-void drx_AddTopLevelIndex(int bottomLevelIndex)
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-	if (bottomLevelIndex != -1)
-	{
-		drxAsm.AddInstance(bottomLevelIndex);
-	}
-}
-
-void drx_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], float origin[3])
-{
-	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-	if (bottomLevelIndex != -1)
-	{
-		drxAsm.AddInstanceWithTransform(bottomLevelIndex, axis, origin);
-	}
-}
-
-void drx_ResetMeshForUpdating(int bottomLevelIndex)
+void dxr_ResetMeshForUpdating(int bottomLevelIndex)
 {
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
 	if (bottomLevelIndex != -1)
@@ -1198,30 +1184,48 @@ void drx_ResetMeshForUpdating(int bottomLevelIndex)
 	}
 }
 
-void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal)
+void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal, int surfaceIndex, int width, int height)
 {
 #if defined( ENABLE_DXR)
 
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	if (drxAsm.MeshCount() <= 0)
+	auto& model = drxAsm.GetModel();
+	//do we already have this mesh?
+	int meshIndex = drxAsm.FindMesh(surfaceIndex);
+	if (-1 == meshIndex)
 	{
-		drxAsm.AddMesh(dxr_acceleration_structure_manager::STATIC_MESH);
+		meshIndex = drxAsm.AddMesh(dxr_acceleration_model::STATIC_MESH, surfaceIndex, width, height);
+		drxAsm.AddWorldInstance(meshIndex);
 	}
-	drxAsm.AddIndexesData(indices, numIndices);
-	drxAsm.AddVertexData(points, normal, numPoints, VERTEXSIZE);
+	model.AddIndexesData(meshIndex, indices, numIndices);
+	model.AddVertexData(meshIndex, points, normal, numPoints, VERTEXSIZE);
 #endif
+}
+
+int dxr_AddWorldSurface(int surfaceIndex, int width, int height)
+{
+	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
+	auto& model = drxAsm.GetModel();
+	//do we already have this mesh?
+	int meshIndex = drxAsm.FindMesh(surfaceIndex);
+	if (-1 == meshIndex)
+	{
+		meshIndex = drxAsm.AddMesh(dxr_acceleration_model::STATIC_MESH, surfaceIndex, width, height);
+		drxAsm.AddWorldInstance(meshIndex);
+	}
+	return meshIndex;
 }
 
 UINT dxr_MeshVertexCount(int bottomLevelIndex)
 {
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
-
-	UINT meshVertexCount = drxAsm.MeshVertexCount(bottomLevelIndex);
+	auto& model = drxAsm.GetModel();
+	UINT meshVertexCount = model.MeshVertexCount(bottomLevelIndex);
 	return meshVertexCount;
 }
 
-static void get_mvp_transform(float* mvp) {
+static void get_mvp_transform(float* mvp)
+{
 	if (backEnd.projection2D) {
 		float mvp0 = 2.0f / glConfig.vidWidth;
 		float mvp5 = 2.0f / glConfig.vidHeight;
@@ -1230,9 +1234,9 @@ static void get_mvp_transform(float* mvp) {
 		mvp[4] = 0.0f; mvp[5] = -mvp5; mvp[6] = 0.0f; mvp[7] = 0.0f;
 		mvp[8] = 0.0f; mvp[9] = 0.0f; mvp[10] = 1.0f; mvp[11] = 0.0f;
 		mvp[12] = -1.0f; mvp[13] = 1.0f; mvp[14] = 0.0f; mvp[15] = 1.0f;
-
 	}
-	else {
+	else
+	{
 		const float* p = backEnd.viewParms.projectionMatrix;
 
 		// update q3's proj matrix (opengl) to d3d conventions: z - [0, 1] instead of [-1, 1]
@@ -1618,7 +1622,7 @@ void dx_end_frame_DXR()
 
 		DXR::UpdateAccelerationStructures(dx, *dx.dxr, dx_world);
 		DXR::Build_Command_List(dx, *dx.dxr, dx_world);
-
+		
 		{
 			dx.dx_postProcessTemporalReproject->Render();
 			dx.dx_postProcessBlur->Render();
@@ -1662,15 +1666,25 @@ void Start3d()
 
 	dx.command_list->SetGraphicsRootSignature(dx.root_signature);
 
-	static cvar_t*	dxr_on = ri.Cvar_Get("dxr_on", "0", 0);
 	dxr_acceleration_structure_manager& drxAsm = dx.dxr->acceleration_structure_manager;
 
+	static cvar_t*	dxr_on = ri.Cvar_Get("dxr_on", "0", 0);
+	static cvar_t*	dxr_dump = ri.Cvar_Get("dxr_dump", "0", 0);
+	if (dxr_dump->value != 0)
+	{
+		dxr_dump->value = 0;
+		drxAsm.WriteAllTopLevelMeshsDebug();
+	}
+	
 	if (dxr_on->value && drxAsm.MeshCount() > 0)
 	{
 		SetupTagetsDXR();
+		
 		float color[4] = { 1, 1, 1, 1 };
 		dx_clear_attachments(true, false, color);
 	}
+
+	//dx.dxr_lights->DrawLightDebug();
 }
 
 void End3d()
@@ -1703,6 +1717,48 @@ void GetLastTransformFromCache(const void *ent, float newTransform[16], float ou
 	}
 }
 
+void AddLevelLight(const vec3_t origin, const vec3_t color, float size)
+{
+	dx.dxr_lights->AddLevelLight(origin, color, size);	
+}
+
+//--------------------------------------
+
+void Create_Buffer(D3D12BufferCreateInfo& info, ID3D12Resource** ppResource)
+{
+	HRESULT hr;
+
+	D3D12_HEAP_PROPERTIES heapDesc = {};
+	heapDesc.Type = info.heapType;
+	heapDesc.CreationNodeMask = 1;
+	heapDesc.VisibleNodeMask = 1;
+
+	D3D12_RESOURCE_DESC resourceDesc = {};
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resourceDesc.Alignment = info.alignment;
+	resourceDesc.Height = 1;
+	resourceDesc.DepthOrArraySize = 1;
+	resourceDesc.MipLevels = 1;
+	resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+	resourceDesc.SampleDesc.Count = 1;
+	resourceDesc.SampleDesc.Quality = 0;
+	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resourceDesc.Width = info.size;
+	resourceDesc.Flags = info.flags;
+
+	// Create the GPU resource
+	hr = dx.device->CreateCommittedResource(&heapDesc, D3D12_HEAP_FLAG_NONE, &resourceDesc, info.state, nullptr, IID_PPV_ARGS(ppResource));
+	if (FAILED(hr))
+	{
+		ri.Error(ERR_FATAL, "Error: failed to create buffer resource!");
+	}
+}
+
+void Create_Constant_Buffer(ID3D12Resource** buffer, UINT64 size)
+{
+	D3D12BufferCreateInfo bufferInfo((size + 255) & ~255, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
+	Create_Buffer(bufferInfo, buffer);
+}
 
 #else // ENABLE_DX12
 

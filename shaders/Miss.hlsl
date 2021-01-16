@@ -32,4 +32,5 @@ void Miss(inout HitInfo payload)
 {
     payload.HitNormal = float4(0.1f, 0.1f, 0.1f, -1.f);
 	payload.HitPos.w = 0.0f;
+	payload.HitColor = float4(0.0f, 0.0f, 0.0f, 1.f);
 }

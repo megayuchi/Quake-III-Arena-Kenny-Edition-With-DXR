@@ -311,8 +311,23 @@ static void AddSurfaceToBottomLevelDxr(msurface_t *surf)
 	}
 
 	srfSurfaceFace_t	*cv = (srfSurfaceFace_t	*)surf->data;
+	int index = surf->shader->stages[0]->bundle[0].image[0]->index;
+	int width = surf->shader->stages[0]->bundle[0].image[0]->uploadWidth;
+	int height = surf->shader->stages[0]->bundle[0].image[0]->uploadHeight;
+
+	char* name = surf->shader->stages[0]->bundle[0].image[0]->imgName;
+
 	unsigned	*indices = (unsigned *)(((char  *)cv) + cv->ofsIndices);
-	dxr_AddWorldSurfaceGeometry(indices, cv->points[0], cv->numIndices, cv->numPoints, cv->plane.normal);
+
+	bool isLightmap = (strncmp(name, "*lightmap", 9) == 0);
+	if (isLightmap)
+	{
+		index = surf->shader->stages[1]->bundle[0].image[0]->index;
+		width = surf->shader->stages[1]->bundle[0].image[0]->uploadWidth;
+		height = surf->shader->stages[1]->bundle[0].image[0]->uploadHeight;
+	}
+
+	dxr_AddWorldSurfaceGeometry(indices, cv->points[0], cv->numIndices, cv->numPoints, cv->plane.normal, index, width, height);
 }
 
 /*
@@ -725,7 +740,6 @@ void R_FixSharedVertexLodError(void) {
 		R_FixSharedVertexLodError_r(i + 1, grid1);
 	}
 }
-
 
 /*
 ===============
@@ -1311,8 +1325,6 @@ static	void R_LoadSurfaces(lump_t *surfs, lump_t *verts, lump_t *indexLump) {
 		numFaces, numMeshes, numTriSurfs, numFlares);
 }
 
-
-
 /*
 =================
 R_LoadSubmodels
@@ -1350,8 +1362,6 @@ static	void R_LoadSubmodels(lump_t *l) {
 		out->numSurfaces = LittleLong(in->numSurfaces);
 	}
 }
-
-
 
 //==================================================================
 
@@ -1650,9 +1660,7 @@ static	void R_LoadFogs(lump_t *l, lump_t *brushesLump, lump_t *sidesLump) {
 
 		out++;
 	}
-
 }
-
 
 /*
 ================
@@ -1780,6 +1788,129 @@ void R_LoadEntities(lump_t *l) {
 	}
 }
 
+const int MAX_KEYES = 10;
+
+int IndexOfKeyHelper(char keynameFind[MAX_TOKEN_CHARS], char keyname[MAX_KEYES][MAX_TOKEN_CHARS], int count)
+{
+	for (int i = 0; i < count; ++i)
+	{
+		if (!Q_stricmp(keyname[i], keynameFind))
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+void LightFoundHelper(char keyname[MAX_KEYES][MAX_TOKEN_CHARS], char value[MAX_KEYES][MAX_TOKEN_CHARS], int count)
+{
+	float size = 1.0f;
+	vec3_t color = { 1,1,1 };
+
+	int lightIndex = IndexOfKeyHelper("light", keyname, count);
+	int originIndex = IndexOfKeyHelper("origin", keyname, count);
+	int colorIndex = IndexOfKeyHelper("_color", keyname, count);
+
+	if (-1 != lightIndex)
+	{
+		sscanf(value[lightIndex], "%f", &size);
+	}
+
+	if (-1 != colorIndex)
+	{
+		sscanf(value[colorIndex], "%f %f %f", &color[0], &color[1], &color[2]);
+	}
+
+	if (-1 != originIndex)
+	{
+		vec3_t lightOrigin;
+		sscanf(value[originIndex], "%f %f %f", &lightOrigin[0], &lightOrigin[1], &lightOrigin[2]);
+
+		OutputDebugStringA(value[originIndex]);
+
+		AddLevelLight(lightOrigin, color, size);
+	}
+	/*
+	for (int i = 0; i < count; ++i)
+	{
+		OutputDebugStringA("keyname:");
+		OutputDebugStringA(keyname[i]);
+		OutputDebugStringA("\t");
+
+		OutputDebugStringA("value:");
+		OutputDebugStringA(value[i]);
+		OutputDebugStringA("\n");
+
+		AddLevelLight();
+	}
+	*/
+	OutputDebugStringA("------------------------\n");
+}
+
+void R_LoadLightFromEntities(lump_t *l)
+{
+	char *p, *token;
+	char keyname[MAX_KEYES][MAX_TOKEN_CHARS];
+	char value[MAX_KEYES][MAX_TOKEN_CHARS];
+
+	p = (char *)(fileBase + l->fileofs);
+
+	token = COM_ParseExt(&p, qtrue);
+	if (!*token || *token != '{')
+	{
+		return;
+	}
+
+	int keyCount = 0;
+	while (1)
+	{
+		// parse key
+		token = COM_ParseExt(&p, qtrue);
+
+		if (!*token)
+		{
+			break;
+		}
+		if (*token == '{')
+		{
+			//start object
+			keyCount = 0;
+			continue;
+		}
+		if (*token == '}')
+		{
+			//end object
+			for (int i = 0; i < keyCount; ++i)
+			{
+				if (!Q_stricmp(keyname[i], "classname"))
+				{
+					if (!Q_stricmp(value[i], "light"))
+					{
+						OutputDebugStringA(value[i]);
+						OutputDebugStringA("\t");
+						LightFoundHelper(keyname, value, keyCount);
+					}
+				}
+			}
+
+			continue;
+		}
+
+		Q_strncpyz(keyname[keyCount], token, sizeof(keyname[keyCount]));
+
+		// parse value
+		token = COM_ParseExt(&p, qtrue);
+
+		if (!*token || *token == '}') {
+			break;
+		}
+
+		Q_strncpyz(value[keyCount], token, sizeof(value[keyCount]));
+
+		keyCount++;
+	}
+}
+
 /*
 =================
 R_GetEntityToken
@@ -1799,13 +1930,12 @@ qboolean R_GetEntityToken(char *buffer, int size) {
 	}
 }
 
-void AddGridToBottomLevelDxr(srfGridMesh_t *cv)
+void AddGridToBottomLevelDxr(msurface_t *surf)
 {
 	int		i, j;
 	vec4_t xyz;
-	vec4_t texCoords;//not used, yet
+	vec4_t texCoords;
 	vec4_t normal;
-	color4ub_t color;//not used, yet
 	drawVert_t	*dv;
 	int		rows, irows, vrows;
 	int		used;
@@ -1814,6 +1944,12 @@ void AddGridToBottomLevelDxr(srfGridMesh_t *cv)
 	float	lodError;
 	int		lodWidth, lodHeight;
 
+	srfGridMesh_t *cv = (srfGridMesh_t *)surf->data;
+
+	int surfaceIndex = surf->shader->stages[0]->bundle[0].image[0]->index;
+	int texWidth = surf->shader->stages[0]->bundle[0].image[0]->uploadWidth;
+	int texHeight = surf->shader->stages[0]->bundle[0].image[0]->uploadHeight;
+	int meshIndex = dxr_AddWorldSurface(surfaceIndex, texWidth, texHeight);
 
 	// determine the allowable discrepance
 	//lodError = LodErrorForVolume(cv->lodOrigin, cv->lodRadius);
@@ -1842,7 +1978,6 @@ void AddGridToBottomLevelDxr(srfGridMesh_t *cv)
 	}
 	heightTable[lodHeight] = cv->height - 1;
 	lodHeight++;
-
 
 	// very large grids may have more points or indexes than can be fit
 	// in the tess structure, so we may have to issue it in multiple passes
@@ -1891,13 +2026,13 @@ void AddGridToBottomLevelDxr(srfGridMesh_t *cv)
 					v3 = v2 + lodWidth;
 					v4 = v3 + 1;
 
-					drx_AddBottomLevelIndex(v2);
-					drx_AddBottomLevelIndex(v3);
-					drx_AddBottomLevelIndex(v1);
+					dxr_AddBottomLevelIndex(meshIndex, v2);
+					dxr_AddBottomLevelIndex(meshIndex, v3);
+					dxr_AddBottomLevelIndex(meshIndex, v1);
 
-					drx_AddBottomLevelIndex(v1);
-					drx_AddBottomLevelIndex(v3);
-					drx_AddBottomLevelIndex(v4);
+					dxr_AddBottomLevelIndex(meshIndex, v1);
+					dxr_AddBottomLevelIndex(meshIndex, v3);
+					dxr_AddBottomLevelIndex(meshIndex, v4);
 					numIndexes += 6;
 				}
 			}
@@ -1922,25 +2057,32 @@ void AddGridToBottomLevelDxr(srfGridMesh_t *cv)
 				normal[1] = dv->normal[1];
 				normal[2] = dv->normal[2];
 
-				*(unsigned int *)color = *(unsigned int *)dv->color;
-
-				drx_AddBottomLevelVertex(xyz, normal);
+				dxr_AddBottomLevelVertex(meshIndex, xyz, normal, texCoords);
 			}
 		}
 		used += rows - 1;
 	}
 }
 
-void AddTrianglesToBottomLevelDxr(srfTriangles_t *srf) {
+void AddTrianglesToBottomLevelDxr(msurface_t *sm)
+{
+	srfTriangles_t *srf = (srfTriangles_t *)sm->data;
+
 	int			i;
 	drawVert_t	*dv;
-	drx_AddBottomLeveIndexesData((unsigned int *)srf->indexes, srf->numIndexes);
+
+	int surfaceIndex = sm->shader->stages[0]->bundle[0].image[0]->index;
+	int texWidth = sm->shader->stages[0]->bundle[0].image[0]->uploadWidth;
+	int texHeight = sm->shader->stages[0]->bundle[0].image[0]->uploadHeight;
+	int meshIndex = dxr_AddWorldSurface(surfaceIndex, texWidth, texHeight);
+
+	dxr_AddBottomLeveIndexesData(meshIndex, (unsigned int *)srf->indexes, srf->numIndexes);
 
 	dv = srf->verts;
 
 	for (i = 0; i < srf->numVerts; i++, dv++)
 	{
-		drx_AddBottomLevelVertex(dv->xyz, dv->normal);
+		dxr_AddBottomLevelVertex(meshIndex, dv->xyz, dv->normal, dv->st);
 	}
 }
 
@@ -1961,7 +2103,7 @@ void RE_LoadWorldMap(const char *name) {
 		ri.Error(ERR_DROP, "ERROR: attempted to redundantly load world map\n");
 	}
 
-	drx_Reset();
+	dxr_Reset();
 
 	// set default sun direction to be used if it isn't
 	// overridden by a shader
@@ -2018,6 +2160,7 @@ void RE_LoadWorldMap(const char *name) {
 	R_LoadVisibility(&header->lumps[LUMP_VISIBILITY]);
 	R_LoadEntities(&header->lumps[LUMP_ENTITIES]);
 	R_LoadLightGrid(&header->lumps[LUMP_LIGHTGRID]);
+	R_LoadLightFromEntities(&header->lumps[LUMP_ENTITIES]);
 
 	s_worldData.dataSize = (byte *)ri.Hunk_Alloc(0, h_low) - startMarker;
 
@@ -2025,8 +2168,6 @@ void RE_LoadWorldMap(const char *name) {
 	tr.world = &s_worldData;
 
 	ri.FS_FreeFile(buffer);
-
-	drx_AddBottomLevelMeshForWorld();
 
 	{
 		int i = 1;//Looks like all the world-models are in here, but should check
@@ -2050,11 +2191,11 @@ void RE_LoadWorldMap(const char *name) {
 				}
 				else if (SF_GRID == *sm->data)
 				{
-					AddGridToBottomLevelDxr((srfGridMesh_t *)sm->data);
+					AddGridToBottomLevelDxr(sm);
 				}
 				else if (SF_TRIANGLES == *sm->data)
 				{
-					AddTrianglesToBottomLevelDxr((srfTriangles_t *)sm->data);
+					AddTrianglesToBottomLevelDxr(sm);
 				}
 				else if (SF_FLARE == *sm->data)
 				{
@@ -2077,7 +2218,6 @@ void RE_LoadWorldMap(const char *name) {
 			break;
 		}
 		}
-		drx_AddTopLevelIndex(0);
 	}
 }
 

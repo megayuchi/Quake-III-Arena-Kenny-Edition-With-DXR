@@ -743,7 +743,7 @@ typedef struct model_s {
 	md4Header_t	*md4;				// only if type == MOD_MD4
 
 	int			 numLods;
-	int			bottomLevelIndexDxr[MD3_MAX_LODS];
+	int			bottomLevelIndexDxr[MD3_MAX_LODS][MD3_MAX_DXR_SURFACES];
 } model_t;
 
 

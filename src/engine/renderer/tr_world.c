@@ -330,16 +330,26 @@ void R_AddBrushModelSurfaces(trRefEntity_t *ent) {//MICK moving world stuff: pla
 
 	bmodel = pModel->bmodel;
 
-	if (-1 == pModel->bottomLevelIndexDxr[0])
+	if (-1 == pModel->bottomLevelIndexDxr[0][0])
 	{
-		pModel->bottomLevelIndexDxr[0] = drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::STATIC_MESH);
+		{
+			//just first surface
+			msurface_t* surf = bmodel->firstSurface;
+
+			int surfaceIndex = surf->shader->stages[0]->bundle[0].image[0]->index;
+			int texWidth = surf->shader->stages[0]->bundle[0].image[0]->uploadWidth;
+			int texHeight = surf->shader->stages[0]->bundle[0].image[0]->uploadHeight;
+
+			pModel->bottomLevelIndexDxr[0][0] = dxr_AddBottomLevelMesh(dxr_acceleration_model::STATIC_MESH, surfaceIndex, texWidth, texHeight);
+		}
 
 		for (i = 0; i < bmodel->numSurfaces; i++)
 		{
 			msurface_t* surf = bmodel->firstSurface + i;
 			srfSurfaceFace_t	*cv = (srfSurfaceFace_t	*)surf->data;
 			unsigned	*indices = (unsigned *)(((char  *)cv) + cv->ofsIndices);
-			drx_AddBottomLevelMeshData(indices, cv->points[0], cv->numIndices, cv->numPoints, cv->plane.normal);
+
+			dxr_AddBottomLevelMeshData(pModel->bottomLevelIndexDxr[0][0], indices, cv->points[0], cv->numIndices, cv->numPoints, cv->plane.normal);
 		}
 	}
 
@@ -354,7 +364,7 @@ void R_AddBrushModelSurfaces(trRefEntity_t *ent) {//MICK moving world stuff: pla
 		R_AddWorldSurface(bmodel->firstSurface + i, tr.currentEntity->needDlights);
 	}
 
-	drx_AddTopLevelIndexWithTransform(pModel->bottomLevelIndexDxr[0], ent->e.axis, ent->e.origin);
+	dxr_AddTopLevelIndexWithTransform(pModel->bottomLevelIndexDxr[0][0], ent->e.axis, ent->e.origin);
 }
 
 /*

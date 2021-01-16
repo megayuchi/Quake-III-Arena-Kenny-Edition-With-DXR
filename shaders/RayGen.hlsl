@@ -164,14 +164,15 @@ float4 LightAtPoint(float3 toLight, float3 hitPos, float3 normal)
 	return lightAngle * inshadow;
 }
 
-float4 LightFromPoint(float3 fromPoint, float3 origin, float3 normal)
+float4 LightFromPoint(float3 fromPoint, float3 origin, float3 normal, float3 color)
 {
 	float destSq = distanceSq(fromPoint, origin);
 	float lightAttenuation = clamp(2000.0f / destSq, 0, 1);
 	float3 toFromPoint = normalize(origin - fromPoint);
 	float lightAngle = dot(toFromPoint, normal);
 
-	float4 bounceColor = WorldPosToAlbedo(float4(fromPoint, 1.0f), float4(0, 0, 0, 1));
+	//float4 bounceColor = WorldPosToAlbedo(float4(fromPoint, 1.0f), float4(0, 0, 0, 1)); //Old Screen space lookup
+	float4 bounceColor = float4(color, 1.0f);	
 	
 	return lightAttenuation * bounceColor /** lightAngle*/;
 }
@@ -182,8 +183,15 @@ void RayGen()
 	uint2 LaunchIndex = DispatchRaysIndex().xy;
 	uint2 LaunchDimensions = DispatchRaysDimensions().xy;
 
-	//HitInfo payload = GetViewWorldHit_RayTrace();
-	HitInfo payload = GetViewWorldHit_G_Buffer();	
+#if 0 //debug 
+	HitInfo payload = GetViewWorldHit_RayTrace();
+	//RTOutput[LaunchIndex.xy] = (payload.HitNormal + float4(1, 1, 1, 0)) * float4(0.5f, 0.5f, 0.5f, 1);
+	//RTOutput[LaunchIndex.xy] = float4(frac(payload.HitNormal.xyz / 100.0f), 1);
+	RTOutput[LaunchIndex.xy] = float4(payload.HitColor.rgb, 1.0f);
+	return;
+#else
+	HitInfo payload = GetViewWorldHit_G_Buffer();
+#endif 
 
 	RTOutput[LaunchIndex.xy] = float4(0.0f, 0.0, 0.0f, 1.0f);
 #if DEBUGOUTPUTS
@@ -217,7 +225,7 @@ void RayGen()
 			float3 normal = payload.HitNormal.xyz;			
 			const int nbIte = 2;
 			const float nbIteInv = 1.0f / float(nbIte);
-			float max = 250.0f;
+			float max = 150.0f;
 
 			for (int i = 0; i < nbIte; i++)
 			{
@@ -239,8 +247,9 @@ void RayGen()
 					//whats the light at the hit spot
 					float3 origin2 = payloadBounce.HitPos.xyz;
 					float3 normal2 = payloadBounce.HitNormal.xyz;				
+					float3 color2 = payloadBounce.HitColor.rgb;
 
-					//second bounce			
+					//second bounce						
 					float4 lightAtSecondPoint = 0.0f;
 					for (int j = 0; j < nbIte; j++)
 					{
@@ -252,7 +261,7 @@ void RayGen()
 						rayBounce2.Origin = origin2;
 						rayBounce2.Direction = normalBend2;
 						rayBounce2.TMin = 1.1f;
-						rayBounce2.TMax = max;
+						rayBounce2.TMax = max *0.5f;
 
 						TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, rayBounce2, payloadBounce2);
 
@@ -261,9 +270,10 @@ void RayGen()
 							//whats the light at the hit spot
 							float3 origin3 = payloadBounce2.HitPos.xyz;
 							float3 normal3 = payloadBounce2.HitNormal.xyz;
+							float3 color3 = payloadBounce2.HitColor.xyz;
 
-							float4 lightAtHit = 100.0f * LightAtPoint(toLight, origin3, normal3);
-							float4 lightFromHit = LightFromPoint(origin3, origin3, normal);
+							float4 lightAtHit = 10.0f * LightAtPoint(toLight, origin3, normal3);
+							float4 lightFromHit = LightFromPoint(origin3, origin3, normal, color3);
 							float4 secondLight = lightFromHit * lightAtHit * nbIteInv*nbIteInv;
 #if DEBUGOUTPUTS
 							if (4 == debug|| 5 == debug || 6 == debug)//show bounce
@@ -275,16 +285,15 @@ void RayGen()
 						}
 					}
 
-					float4 lightAtHit = 100.0f * LightAtPoint(toLight, origin2, normal2);
-					float4 lightFromHit = LightFromPoint(origin2, origin, normal);
+					float4 lightAtHit = 10.0f * LightAtPoint(toLight, origin2, normal2);
+					float4 lightFromHit = LightFromPoint(origin2, origin, normal, color2);
 					float4 firstLight = lightFromHit * lightAtHit * nbIteInv;
 #if DEBUGOUTPUTS
 					if (5 == debug || 6 == debug)//show bounce
 					{
 						firstLight = float4(0, 0, 0, 1);//cancel out direct light
 					}
-#endif
-					
+#endif					
 					RTOutput[LaunchIndex.xy] += firstLight;					
 				}
 			}

@@ -27,16 +27,15 @@
 
 #include "Common.hlsl"
 
-struct ModelCB
+cbuffer ModelCB : register(b0, space3)
 {
 	uint indexOffSet;
 	uint vertexOffSet;
-	uint pada;
-	uint padb;
+	uint texWidth;
+	uint texHeight;
 };
 
-ConstantBuffer<ModelCB> modelInfo[] : register(b0, space3);
-
+Texture2D<float4> textureAlbedo				: register(t0, space3);
 
 [shader("closesthit")]
 void ClosestHit(inout HitInfo payload, BuiltInTriangleIntersectionAttributes attrib)
@@ -45,7 +44,7 @@ void ClosestHit(inout HitInfo payload, BuiltInTriangleIntersectionAttributes att
 
 	uint triangleIndex = PrimitiveIndex();
 
-	VertexAttributes vertex = GetVertexAttributes(triangleIndex, barycentrics, modelInfo[0].indexOffSet, modelInfo[0].vertexOffSet);
+	VertexAttributes vertex = GetVertexAttributes(triangleIndex, barycentrics, indexOffSet, vertexOffSet);
 	float3 nor = normalize(mul((float3x3) ObjectToWorld3x4(), vertex.normal));
 
 	payload.HitNormal = float4(nor, 1.0f);
@@ -56,6 +55,8 @@ void ClosestHit(inout HitInfo payload, BuiltInTriangleIntersectionAttributes att
 
 	// Find the world-space hit position
 	float3 posW = rayOriginW + hitT * rayDirW;
-	payload.HitPos = float4(posW, hitT);
-	
+	payload.HitPos = float4(posW, hitT);	
+
+	int2 coord = floor(frac(vertex.uv) * float2(texWidth, texHeight)); //point sample
+	payload.HitColor = textureAlbedo.Load(int3(coord, 0));
 }

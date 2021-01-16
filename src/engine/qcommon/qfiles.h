@@ -121,6 +121,7 @@ typedef struct _TargaHeader {
 #define MD3_MAX_FRAMES		1024	// per model
 #define	MD3_MAX_SURFACES	32		// per model
 #define MD3_MAX_TAGS		16		// per frame
+#define	MD3_MAX_DXR_SURFACES 6
 
 // vertex scales
 #define	MD3_XYZ_SCALE		(1.0/64)

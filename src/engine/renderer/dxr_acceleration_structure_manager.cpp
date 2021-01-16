@@ -13,10 +13,9 @@ dxr_acceleration_structure_manager::~dxr_acceleration_structure_manager()
 void dxr_acceleration_structure_manager::Reset()
 {
 	mTopLevelInstances.clear();
-
+	mTopLevelWorldInstances.clear();
 	mTopLevelInstanceTransforms.clear();
 	mModel.Reset();
-
 }
 
 void dxr_acceleration_structure_manager::AddInstance(int i)
@@ -28,6 +27,11 @@ void dxr_acceleration_structure_manager::AddInstance(int i)
 	transform.data[0][0] = transform.data[1][1] = transform.data[2][2] = 1;		// identity transform
 
 	mTopLevelInstanceTransforms.push_back(transform);
+}
+
+void dxr_acceleration_structure_manager::AddWorldInstance(int i)
+{
+	mTopLevelWorldInstances.push_back(i);
 }
 
 void dxr_acceleration_structure_manager::AddInstanceWithTransform(int i, vec3_t axis[3], float origin[3])
@@ -54,9 +58,9 @@ int dxr_acceleration_structure_manager::EndFrame()
 	mTopLevelInstances.clear();
 	mTopLevelInstanceTransforms.clear();
 
-	if (MeshCount() > 0)
+	for (int i : mTopLevelWorldInstances)
 	{
-		AddInstance(0);
+		AddInstance(i);
 	}
 
 	return 0;
@@ -64,7 +68,7 @@ int dxr_acceleration_structure_manager::EndFrame()
 
 void dxr_acceleration_structure_manager::WriteMeshDebug(int n, InstancesTransform& transform)
 {
-	Model::Mesh& m = mModel.meshes[n];
+	auto& m = mModel.meshes[n];
 
 	char buffer[512];
 	sprintf(buffer, "o mesh.%d\n", n);	OutputDebugStringA(buffer);
@@ -72,25 +76,25 @@ void dxr_acceleration_structure_manager::WriteMeshDebug(int n, InstancesTransfor
 	sprintf(buffer, "usemtl mesh.%d\n", n);	OutputDebugStringA(buffer);
 
 	//write veteics
-	for (int i = m.StartVertexIndex; i < m.StartVertexIndex + m.VertexCount; ++i)
+	for (int i = 0; i < m.VertexCount; ++i)
 	{
-		Model::Vertex ver = MatrixMul(transform, mModel.vertices[i]);
+		auto ver = MatrixMul(transform, m.Vertices[i]);
 		sprintf(buffer, "v %f %f %f\n", ver.position.x, ver.position.y, ver.position.z);	OutputDebugStringA(buffer);
 	}
 
 	//write normals
-	for (int i = m.StartVertexIndex; i < m.StartVertexIndex + m.VertexCount; ++i)
+	for (int i = 0; i < m.VertexCount; ++i)
 	{
-		sprintf(buffer, "vn %f %f %f\n", mModel.vertices[i].normal.x, mModel.vertices[i].normal.y, mModel.vertices[i].normal.z);	OutputDebugStringA(buffer);
+		sprintf(buffer, "vn %f %f %f\n", m.Vertices[i].normal.x, m.Vertices[i].normal.y, m.Vertices[i].normal.z);	OutputDebugStringA(buffer);
 	}
 	
 	sprintf(buffer, "s %d\n", n);	OutputDebugStringA(buffer);
 
-	for (int i = m.StartIndexIndex; i < m.StartIndexIndex + m.IndexCount; i += 3)
+	for (int i = 0; i < m.IndexCount; i += 3)
 	{
-		int a = mModel.indices[i + 0] + 1 + mVerticesWritenDebug;
-		int b = mModel.indices[i + 1] + 1 + mVerticesWritenDebug;
-		int c = mModel.indices[i + 2] + 1 + mVerticesWritenDebug;
+		int a = m.Indices[i + 0] + 1 + mVerticesWritenDebug;
+		int b = m.Indices[i + 1] + 1 + mVerticesWritenDebug;
+		int c = m.Indices[i + 2] + 1 + mVerticesWritenDebug;
 
 		sprintf(buffer, "f %d//%d %d//%d %d//%d\n", a, a, b, b, c, c);	OutputDebugStringA(buffer);
 	}
@@ -124,9 +128,9 @@ void dxr_acceleration_structure_manager::WriteAllBottomLevelMeshsDebug()
 	}
 }
 
-dxr_acceleration_structure_manager::Model::Vertex dxr_acceleration_structure_manager::MatrixMul(dxr_acceleration_structure_manager::InstancesTransform& transform, dxr_acceleration_structure_manager::Model::Vertex vecIn)
+dxr_acceleration_model::Vertex dxr_acceleration_structure_manager::MatrixMul(dxr_acceleration_structure_manager::InstancesTransform& transform, dxr_acceleration_model::Vertex vecIn)
 {
-	dxr_acceleration_structure_manager::Model::Vertex vecOut;
+	dxr_acceleration_model::Vertex vecOut;
 
 	vecOut.normal.x = vecIn.normal.x;
 	vecOut.normal.y = vecIn.normal.y;

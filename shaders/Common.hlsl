@@ -31,6 +31,7 @@ struct HitInfo
 {
 	float4 HitNormal;
 	float4 HitPos;
+	float4 HitColor;
 };
 
 cbuffer ViewCB : register(b0)
@@ -65,6 +66,7 @@ struct VertexAttributes
 {
 	float3 position;
 	float3 normal;
+	float2 uv;
 };
 
 uint3 GetIndices(uint triangleIndex, uint indexOffSet)
@@ -74,19 +76,25 @@ uint3 GetIndices(uint triangleIndex, uint indexOffSet)
 	return indices.Load3(address);
 }
 
+#define NUM_ELEMENTS_PER_VERTEX 8 //see dxr_acceleration_model::Vertex
+#define SIZE_OF_VERTEX_ELEMENT 4 //4 bytes
+
 VertexAttributes GetVertexAttributes(uint triangleIndex, float3 barycentrics, uint indexOffSet, uint vertexOffset)
 {
 	uint3 indices = GetIndices(triangleIndex, indexOffSet);
 	VertexAttributes v;
 	v.position = float3(0, 0, 0);
 	v.normal = float3(0, 0, 0);
+	v.uv = float2(0, 0);
 
 	for (uint i = 0; i < 3; i++)
 	{
-		uint address = ((indices[i]+ vertexOffset) * 6) * 4;
+		uint address = ((indices[i]+ vertexOffset) * NUM_ELEMENTS_PER_VERTEX) * SIZE_OF_VERTEX_ELEMENT;
 		v.position += asfloat(vertices.Load3(address)) * barycentrics[i];
-		address += (3 * 4);
+		address += (3 * SIZE_OF_VERTEX_ELEMENT);
 		v.normal += asfloat(vertices.Load3(address)) * barycentrics[i];
+		address += (3 * SIZE_OF_VERTEX_ELEMENT);
+		v.uv += asfloat(vertices.Load3(address)) * barycentrics[i];
 	}
 
 	return v;

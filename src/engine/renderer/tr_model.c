@@ -62,7 +62,10 @@ model_t *R_AllocModel(void) {
 	mod->index = tr.numModels;
 	for (int i = 0; i < MD3_MAX_LODS; ++i)
 	{
-		mod->bottomLevelIndexDxr[i] = -1;
+		for (int j = 0; j < MD3_MAX_DXR_SURFACES; ++j)
+		{
+			mod->bottomLevelIndexDxr[i][j] = -1;
+		}
 	}	
 	tr.models[tr.numModels] = mod;
 	tr.numModels++;

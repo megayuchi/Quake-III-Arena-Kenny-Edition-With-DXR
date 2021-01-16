@@ -2,6 +2,7 @@
 #include "../../engine/platform/win_local.h"
 
 #include "dx_renderTargets.h"
+#include "dxr_heapManager.h"
 
 #include <d3dx12.h>
 #include <functional>
@@ -113,7 +114,7 @@ void dx_renderTargets::CreateDescriptorHeaps()
 		dsv_descriptor_size = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	}
 
-	// SRV heap.
+	// SRV heap. (Game Textures?)
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC heap_desc;
 		heap_desc.NumDescriptors = MAX_DRAWIMAGES;
@@ -327,7 +328,6 @@ void dx_renderTargets::CreateDepthBufferResource(Dx_DepthTarget_Index index)
 
 void dx_renderTargets::CreateHelperTextures()
 {
-
 	int width = 0;
 	int height = 0;
 
@@ -410,7 +410,6 @@ Dx_Image dx_renderTargets::CreateImage(int width, int height, Dx_Image_Format fo
 		srv_desc.Texture2DArray.FirstArraySlice = 0;
 		srv_desc.Texture2DArray.ArraySize = depthOrArraySize;
 
-
 		D3D12_CPU_DESCRIPTOR_HANDLE handle;
 		handle.ptr = srv_heap->GetCPUDescriptorHandleForHeapStart().ptr + image_index * srv_descriptor_size;
 		mDevice->CreateShaderResourceView(image.texture, &srv_desc, handle);
@@ -428,6 +427,9 @@ Dx_Image dx_renderTargets::CreateImage(int width, int height, Dx_Image_Format fo
 		D3D12_CPU_DESCRIPTOR_HANDLE handle;
 		handle.ptr = srv_heap->GetCPUDescriptorHandleForHeapStart().ptr + image_index * srv_descriptor_size;
 		mDevice->CreateShaderResourceView(image.texture, &srv_desc, handle);
+
+		dxr_heapManager* heapManager = dxr_heapManager::Get();
+		heapManager->AddGameTextureViews(image_index, image.texture, dx_format, mip_levels);
 
 		dx_world.current_image_indices[glState.currenttmu] = image_index;
 	}

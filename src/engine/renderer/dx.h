@@ -5,6 +5,7 @@
 
 #include <vector>
 #include "dxr_acceleration_structure_manager.h"
+#include "dxr_acceleration_model.h"
 #include "dx_shaders.h"
 
 struct ID3D12CommandAllocator;
@@ -25,15 +26,13 @@ class dx_postProcess;
 class dx_postProcessTemporalReproject;
 class dx_postProcessBlur;
 class dx_postProcessComposite;
+class dxr_lights;
 
 //DRX
-//struct D3D12ShaderCompilerInfo;
 struct DXRGlobal;
 struct D3D12Resources;
 struct ViewCB;
 struct MaterialCB;
-
-//constexpr int SWAPCHAIN_BUFFER_COUNT = 2;
 
 enum Dx_Sampler_Index {
 	SAMPLER_MIP_REPEAT,
@@ -43,7 +42,6 @@ enum Dx_Sampler_Index {
 	SAMPLER_FULLSCREEN_CLAMP,
 	SAMPLER_COUNT
 };
-
 
 struct Dx_Image {
 	ID3D12Resource* texture = nullptr;
@@ -56,6 +54,44 @@ enum Dx_Image_Format {
 	IMAGE_FORMAT_BGR5A1
 };
 
+struct D3D12BufferCreateInfo
+{
+	UINT64 size;
+	UINT64 alignment;
+	D3D12_HEAP_TYPE heapType;
+	D3D12_RESOURCE_FLAGS flags;
+	D3D12_RESOURCE_STATES state;
+
+	D3D12BufferCreateInfo() :
+		size(0), alignment(0),
+		heapType(D3D12_HEAP_TYPE_DEFAULT),
+		flags(D3D12_RESOURCE_FLAG_NONE),
+		state(D3D12_RESOURCE_STATE_COMMON) {}
+
+	D3D12BufferCreateInfo(UINT64 InSize, UINT64 InAlignment, D3D12_HEAP_TYPE InHeapType, D3D12_RESOURCE_FLAGS InFlags, D3D12_RESOURCE_STATES InState) :
+		size(InSize), alignment(InAlignment),
+		heapType(InHeapType),
+		flags(InFlags),
+		state(InState) {}
+
+	D3D12BufferCreateInfo(UINT64 InSize, D3D12_RESOURCE_FLAGS InFlags, D3D12_RESOURCE_STATES InState) :
+		size(InSize), alignment(0),
+		heapType(D3D12_HEAP_TYPE_DEFAULT),
+		flags(InFlags),
+		state(InState) {}
+
+	D3D12BufferCreateInfo(UINT64 InSize, D3D12_HEAP_TYPE InHeapType, D3D12_RESOURCE_STATES InState) :
+		size(InSize), alignment(0),
+		heapType(InHeapType),
+		flags(D3D12_RESOURCE_FLAG_NONE),
+		state(InState) {}
+
+	D3D12BufferCreateInfo(UINT64 InSize, D3D12_RESOURCE_FLAGS InFlags) :
+		size(InSize), alignment(0),
+		heapType(D3D12_HEAP_TYPE_DEFAULT),
+		flags(InFlags),
+		state(D3D12_RESOURCE_STATE_COMMON) {}
+};
 
 //
 // Initialization.
@@ -81,21 +117,19 @@ ID3D12PipelineState* dx_find_pipeline(const Vk_Pipeline_Def& def);
 //
 void dx_clear_attachments(bool clear_depth_stencil, bool clear_color, vec4_t color);
 
-void drx_Reset();
-void drx_AddBottomLevelMeshForWorld();
-int drx_AddBottomLevelMesh(dxr_acceleration_structure_manager::meshType_t meshType);
-void drx_AddBottomLevelMeshData(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal);
+void dxr_Reset();
+int dxr_AddBottomLevelMesh(dxr_acceleration_model::meshType_t meshType, int surfaceIndex, int width, int height);
+void dxr_AddBottomLevelMeshData(int bottomLevelIndex, unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal);
 
-void drx_AddBottomLeveIndexesData(unsigned *indices, int numIndices);
-void drx_AddBottomLevelIndex(unsigned index);
-void drx_AddBottomLevelVertex(float	*xyz, float* normal);
-void drx_UpdateBottomLevelVertex(int bottomLevelIndex, float *xyz, float* normal);
+void dxr_AddBottomLeveIndexesData(int bottomLevelIndex, unsigned *indices, int numIndices);
+void dxr_AddBottomLevelIndex(int bottomLevelIndex, unsigned index);
+void dxr_AddBottomLevelVertex(int bottomLevelIndex, float	*xyz, float* normal, float* uv);
 
-void drx_AddTopLevelIndex(int bottomLevelIndex);
-void drx_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], float origin[3]);
-void drx_ResetMeshForUpdating(int bottomLevelIndex);
+void dxr_AddTopLevelIndexWithTransform(int bottomLevelIndex, vec3_t axis[3], float origin[3]);
+void dxr_ResetMeshForUpdating(int bottomLevelIndex);
 
-void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal);
+void dxr_AddWorldSurfaceGeometry(unsigned *indices, float* points, int numIndices, int numPoints, vec3_t normal, int surfaceIndex, int width, int height);
+int dxr_AddWorldSurface(int surfaceIndex, int width, int height);
 
 UINT dxr_MeshVertexCount(int bottomLevelIndex);
 
@@ -110,6 +144,10 @@ void dx_end_frame_DXR();
 void Start3d();
 void End3d();
 void GetLastTransformFromCache(const void *ent, float newTransform[16], float out_lastTransform[16], int frameCount);
+void AddLevelLight(const vec3_t origin, const vec3_t color, float size);
+
+void Create_Buffer(D3D12BufferCreateInfo& info, ID3D12Resource** ppResource);
+void Create_Constant_Buffer(ID3D12Resource** buffer, UINT64 size);
 
 struct ShaderConstanceViewCB
 {
@@ -188,6 +226,7 @@ struct Dx_Instance
 	dx_postProcessTemporalReproject* dx_postProcessTemporalReproject = nullptr;
 	dx_postProcessBlur* dx_postProcessBlur = nullptr;
 	dx_postProcessComposite* dx_postProcessComposite = nullptr;
+	dxr_lights* dxr_lights = nullptr;
 
 	ID3D12Resource* shaderConstantView = nullptr;
 	ShaderConstanceViewCB shaderConstanceViewCB;
@@ -196,8 +235,6 @@ struct Dx_Instance
 	//DXR
 	bool dxr_initialized{ false };
 	D3DShaders::D3D12ShaderCompilerInfo* shaderCompiler;
-
-	ID3D12DescriptorHeap* cbvSrvUavRayGenHeaps;
 	
 	int width;
 	int height;
@@ -231,7 +268,6 @@ struct Dx_World {
 	float view_transformLast[16];
 	float view_transform3D[16];
 	float view_transformLast3D[16];
-
 	float proj_transform[16];
 
 	float zNear;
@@ -241,14 +277,9 @@ struct Dx_World {
 	vec3_t		viewaxisForword;
 	vec2_t		viewFov;
 	int			rdflags;			// RDF_NOWORLDMODEL, etc
-	
 
 	//DXR
 	ID3D12Resource*									viewCB;
 	ViewCB*											viewCBData;
-	UINT8*											viewCBStart;	
-	
-	ID3D12Resource*									materialCB;
-	MaterialCB*										materialCBData;
-	UINT8*											materialCBStart;
+	UINT8*											viewCBStart;
 };

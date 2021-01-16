@@ -104,14 +104,13 @@ void dx_postProcessTemporalReproject::Render()
 	dx.command_list->SetComputeRootSignature(mPass.m_rgs.pRootSignature);
 
 	// Set the shader constants
-
 	uint32_t bufferWidth = dx.width;
 	uint32_t bufferHeight = dx.height;
 
 	static cvar_t*	dxr_temporal_debug = ri.Cvar_Get("dxr_temporal_debug", "0", 0);
 
 	float dimensions[6] = { (float)bufferWidth, (float)bufferHeight, 1.0f / (float)bufferWidth, 1.0f / (float)bufferHeight,
-	dxr_temporal_debug->value/*dx_world .zNear*/,
+	dxr_temporal_debug->value,
 	dx_world.zFar };
 	
 	dx.command_list->SetComputeRoot32BitConstants(0, 6, dimensions, 0);
@@ -154,7 +153,6 @@ void dx_postProcessTemporalReproject::Render()
 	dx.command_list->SetComputeRootDescriptorTable(3, mPass.m_cbvSrvUavRayGenHeaps->GetGPUDescriptorHandleForHeapStart());
 
 	{
-		/**/
 		D3D12_GPU_DESCRIPTOR_HANDLE sampler_handle = dx.dx_renderTargets->GetSamplerHandle(SAMPLER_FULLSCREEN_CLAMP);
 		dx.command_list->SetComputeRootDescriptorTable(4, sampler_handle);
 	}

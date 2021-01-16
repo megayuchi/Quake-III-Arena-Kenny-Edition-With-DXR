@@ -7,6 +7,8 @@
 #include "dxr.h"
 #include "dx_shaders.h"
 #include "dx_renderTargets.h"
+#include "dxr_lights.h"
+#include "dxr_heapManager.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN			// Exclude rarely-used items from Windows headers.
@@ -21,38 +23,8 @@
 #pragma warning(pop)
 
 #define MAX_TOP_LEVEL_INSTANCE_COUNT 6000
-#define MAX_BOTTOM_LEVEL_MESH_COUNT 6000
-#define MEGA_INDEX_VERTEX_BUFFER_SIZE 0x0000000000ffffff //big ;) got to hold all the polys
+#define MAX_BOTTOM_LEVEL_MESH_COUNT 5000
 
-void Create_Buffer(Dx_Instance &d3d, D3D12BufferCreateInfo& info, ID3D12Resource** ppResource)
-{
-	HRESULT hr;
-
-	D3D12_HEAP_PROPERTIES heapDesc = {};
-	heapDesc.Type = info.heapType;
-	heapDesc.CreationNodeMask = 1;
-	heapDesc.VisibleNodeMask = 1;
-
-	D3D12_RESOURCE_DESC resourceDesc = {};
-	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resourceDesc.Alignment = info.alignment;
-	resourceDesc.Height = 1;
-	resourceDesc.DepthOrArraySize = 1;
-	resourceDesc.MipLevels = 1;
-	resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-	resourceDesc.SampleDesc.Count = 1;
-	resourceDesc.SampleDesc.Quality = 0;
-	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resourceDesc.Width = info.size;
-	resourceDesc.Flags = info.flags;
-
-	// Create the GPU resource
-	hr = d3d.device->CreateCommittedResource(&heapDesc, D3D12_HEAP_FLAG_NONE, &resourceDesc, info.state, nullptr, IID_PPV_ARGS(ppResource));
-	if (FAILED(hr))
-	{
-		ri.Error(ERR_FATAL, "Error: failed to create buffer resource!");
-	}
-}
 
 namespace DXR
 {
@@ -71,16 +43,17 @@ namespace DXR
 		Com_Memset(d3d.resources, 0, sizeof(D3D12Resources));
 
 		world.viewCBData = new ViewCB;
-		world.materialCBData = new MaterialCB;
 
 		// Create common resources
 		DXR::Create_View_CB(d3d, *d3d.dxr, world);
-		DXR::Create_Material_CB(d3d, *d3d.dxr, world);
-
+		
 		// Create DXR specific resources
 		DXR::Create_Index_Vertex_Buffers(dx, *dx.dxr, world);
 		DXR::BuildAccelerationStructure(dx, *dx.dxr, world);
-		Create_CBVSRVUAV_Heap(d3d, *d3d.dxr, world);
+
+		dxr_heapManager* heapManager = d3d.dxr->dxr_heapManager;
+		heapManager->Create_CBVSRVUAV_Heap(d3d, *d3d.dxr, world);
+
 		DXR::Create_RayGen_Program(d3d, *d3d.dxr, *d3d.shaderCompiler);
 		DXR::Create_Miss_Program(d3d, *d3d.dxr, *d3d.shaderCompiler);
 		DXR::Create_Closest_Hit_Program(d3d, *d3d.dxr, *d3d.shaderCompiler);
@@ -95,15 +68,9 @@ namespace DXR
 		DXR::Create_Top_Level_AS(d3d, *d3d.dxr);
 	}
 
-	void Create_Constant_Buffer(Dx_Instance &d3d, ID3D12Resource** buffer, UINT64 size)
-	{
-		D3D12BufferCreateInfo bufferInfo((size + 255) & ~255, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
-		Create_Buffer(d3d, bufferInfo, buffer);
-	}
-
 	void Create_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
-		Create_Constant_Buffer(d3d, &world.viewCB, sizeof(ViewCB));
+		Create_Constant_Buffer(&world.viewCB, sizeof(ViewCB));
 
 		HRESULT hr = world.viewCB->Map(0, nullptr, reinterpret_cast<void**>(&world.viewCBStart));
 		
@@ -114,22 +81,7 @@ namespace DXR
 
 		memcpy(world.viewCBStart, &world.viewCBData, sizeof(*world.viewCBData));
 	}
-
-	void Create_Material_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
-	{
-		Create_Constant_Buffer(d3d, &world.materialCB, sizeof(MaterialCB));
-
-		world.materialCBData->resolution = DirectX::XMFLOAT4(32, 0.f, 0.f, 0.f);
-
-		HRESULT hr = world.materialCB->Map(0, nullptr, reinterpret_cast<void**>(&world.materialCBStart));
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Error: failed to map Material constant buffer!");
-		}
-
-		memcpy(world.materialCBStart, world.materialCBData, sizeof(world.materialCBData));
-	}
-
+	
 	void Update_View_CB(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
 		DirectX::XMFLOAT3 eye = DirectX::XMFLOAT3(world.viewOrg[0], world.viewOrg[1], world.viewOrg[2]);
@@ -197,7 +149,7 @@ namespace DXR
 			MEGA_INDEX_VERTEX_BUFFER_SIZE,
 			D3D12_HEAP_TYPE_UPLOAD,
 			D3D12_RESOURCE_STATE_GENERIC_READ);
-		Create_Buffer(d3d, vectexInfo, &d3d.resources->vertexBufferMega);
+		Create_Buffer(vectexInfo, &d3d.resources->vertexBufferMega);
 
 #if defined(_DEBUG)
 		d3d.resources->vertexBufferMega->SetName(L"vertexBufferMega");
@@ -207,7 +159,7 @@ namespace DXR
 			MEGA_INDEX_VERTEX_BUFFER_SIZE,
 			D3D12_HEAP_TYPE_UPLOAD,
 			D3D12_RESOURCE_STATE_GENERIC_READ);
-		Create_Buffer(d3d, indexInfo, &d3d.resources->indexBufferMega);
+		Create_Buffer(indexInfo, &d3d.resources->indexBufferMega);
 
 #if defined(_DEBUG)
 		d3d.resources->indexBufferMega->SetName(L"indexBufferMega");
@@ -220,8 +172,8 @@ namespace DXR
 	void Create_Bottom_Level_AS(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
 		dxr_acceleration_structure_manager& drxAsm = d3d.dxr->acceleration_structure_manager;
-
-		if (drxAsm.DirtyCount() < 1)
+		auto& model = drxAsm.GetModel();
+		if (model.DirtyCount() < 1)
 		{
 			return;
 		}
@@ -233,15 +185,15 @@ namespace DXR
 
 		for (int i = 0; i < meshCount; ++i)
 		{
-			bool update = drxAsm.IsMeshUpdate(i);
-			if (!(drxAsm.IsMeshDirty(i) || update))
+			bool update = model.IsMeshUpdate(i);
+			if (!(model.IsMeshDirty(i) || update))
 			{
 				continue;
 			}
 
 			// Create the buffer resource from the model's vertices
 			{
-				UINT meshVertexCount = drxAsm.MeshVertexCount(i);
+				UINT meshVertexCount = model.MeshVertexCount(i);
 
 				// Copy the vertex data to the vertex buffer
 				UINT8* pVertexDataBegin;
@@ -251,23 +203,23 @@ namespace DXR
 
 				if (update)
 				{
-					UINT32 pos = drxAsm.GetVertexBufferMegaPos(i);
+					UINT32 pos = model.GetVertexBufferMegaPos(i);
 					readWriteRange.Begin = pos * vertexSizeOf;
 					readWriteRange.End = (pos + meshVertexCount) *  vertexSizeOf;
 					assert(readWriteRange.End > readWriteRange.Begin);
 				}
 				else
 				{
-					drxAsm.SetVertexBufferMegaPos(i, d3d.resources->currentVertexBufferMegaCount);
+					model.SetVertexBufferMegaPos(i, d3d.resources->currentVertexBufferMegaCount);
 				}
-				assert(readWriteRange.End > readWriteRange.Begin);
+				assert(readWriteRange.End >= readWriteRange.Begin);
 				assert(readWriteRange.End < MEGA_INDEX_VERTEX_BUFFER_SIZE);
 				HRESULT hr = d3d.resources->vertexBufferMega->Map(0, &readWriteRange, reinterpret_cast<void**>(&pVertexDataBegin));
 				if (FAILED(hr))
 				{
 					ri.Error(ERR_FATAL, "Error: failed to map vertex buffer!");
 				}
-				const void* vertexData = drxAsm.GetMeshVertexData(i);
+				const void* vertexData = model.GetMeshVertexData(i);
 				UINT64 size = meshVertexCount * vertexSizeOf;
 
 				pVertexDataBegin += readWriteRange.Begin;//you would think the Map would give the pointer at the Range Beging?
@@ -279,14 +231,15 @@ namespace DXR
 			// Create the index buffer resource
 			if (!update)
 			{
-				UINT64 size = drxAsm.MeshIndexCount(i) * sizeof(UINT);
-
+				UINT numberIndexs = model.MeshIndexCount(i); 
+				UINT64 size = numberIndexs * sizeof(UINT);
+				
 				// Copy the index data to the index buffer
 				UINT8* pIndexDataBegin;
 				D3D12_RANGE readWriteRange = {};
 				readWriteRange.Begin = d3d.resources->currentIndexBufferMegaCount *  indexSizeOf;
-				readWriteRange.End = (d3d.resources->currentIndexBufferMegaCount + drxAsm.MeshIndexCount(i)) *  indexSizeOf;
-				drxAsm.SetIndexBufferMegaPos(i, d3d.resources->currentIndexBufferMegaCount);
+				readWriteRange.End = (d3d.resources->currentIndexBufferMegaCount + numberIndexs) *  indexSizeOf;
+				model.SetIndexBufferMegaPos(i, d3d.resources->currentIndexBufferMegaCount);
 				assert(readWriteRange.End < MEGA_INDEX_VERTEX_BUFFER_SIZE);
 				HRESULT hr = d3d.resources->indexBufferMega->Map(0, &readWriteRange, reinterpret_cast<void**>(&pIndexDataBegin));
 				if (FAILED(hr))
@@ -294,9 +247,11 @@ namespace DXR
 					ri.Error(ERR_FATAL, "Error: failed to map index buffer!");
 				}
 
-				const void* indexData = drxAsm.GetMeshIndexData(i);
+				const void* indexData = model.GetMeshIndexData(i);
+
 				pIndexDataBegin += readWriteRange.Begin;;//you would think the Map would give the pointer at the Range Beging?
 				memcpy(pIndexDataBegin, indexData, size);
+				
 				d3d.resources->indexBufferMega->Unmap(0, &readWriteRange);
 			}
 
@@ -304,22 +259,22 @@ namespace DXR
 			D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc;
 
 			geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-			UINT32 vertexPos = drxAsm.GetVertexBufferMegaPos(i);
+			UINT32 vertexPos = model.GetVertexBufferMegaPos(i);
 			geometryDesc.Triangles.VertexBuffer.StartAddress = d3d.resources->vertexBufferMega->GetGPUVirtualAddress() + vertexPos * vertexSizeOf;
 			geometryDesc.Triangles.VertexBuffer.StrideInBytes = (UINT)vertexSizeOf;
-			geometryDesc.Triangles.VertexCount = drxAsm.MeshVertexCount(i);
+			geometryDesc.Triangles.VertexCount = model.MeshVertexCount(i);
 			geometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
 
-			UINT32 indexPos = drxAsm.GetIndexBufferMegaPos(i);
+			UINT32 indexPos = model.GetIndexBufferMegaPos(i);
 			geometryDesc.Triangles.IndexBuffer = d3d.resources->indexBufferMega->GetGPUVirtualAddress() + indexPos * indexSizeOf;
 			geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-			geometryDesc.Triangles.IndexCount = drxAsm.MeshIndexCount(i);
+			geometryDesc.Triangles.IndexCount = model.MeshIndexCount(i);
 			geometryDesc.Triangles.Transform3x4 = 0;
 			geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 
 			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
-			if (dxr_acceleration_structure_manager::DYNAMIC_MESH == drxAsm.GetMeshType(i))
+			if (dxr_acceleration_model::DYNAMIC_MESH == drxAsm.GetMeshType(i))
 			{
 				buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
 			}
@@ -354,12 +309,15 @@ namespace DXR
 				// Create the BLAS scratch buffer
 				D3D12BufferCreateInfo bufferInfo(ASPreBuildInfo.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 				bufferInfo.alignment = std::max(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT);
-				Create_Buffer(d3d, bufferInfo, &BLAS.pScratch);
+				Create_Buffer(bufferInfo, &BLAS.pScratch);
+				BLAS.pScratch->SetName(L"BLAS.pScratch");
 
 				// Create the BLAS buffer
 				bufferInfo.size = ASPreBuildInfo.ResultDataMaxSizeInBytes;
 				bufferInfo.state = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-				Create_Buffer(d3d, bufferInfo, &BLAS.pResult);
+				Create_Buffer(bufferInfo, &BLAS.pResult);
+
+				BLAS.pResult->SetName(L"rgs.pRootSignature");
 
 				dxr.BLASs.push_back(BLAS);
 			}
@@ -388,12 +346,12 @@ namespace DXR
 
 			if (!update)
 			{
-				d3d.resources->currentVertexBufferMegaCount += drxAsm.MeshVertexCount(i);
-				d3d.resources->currentIndexBufferMegaCount += drxAsm.MeshIndexCount(i);
+				d3d.resources->currentVertexBufferMegaCount += model.MeshVertexCount(i);
+				d3d.resources->currentIndexBufferMegaCount += model.MeshIndexCount(i);
 			}
 		}
 
-		drxAsm.ClearDirty();
+		model.ClearDirty();
 	}
 
 	void Create_Top_Level_AS(Dx_Instance &d3d, DXRGlobal &dxr)
@@ -405,64 +363,52 @@ namespace DXR
 		ASInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
 		ASInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 		ASInputs.NumDescs = meshCount;
-
 		ASInputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
 
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO ASPreBuildInfo = {};
 		d3d.device->GetRaytracingAccelerationStructurePrebuildInfo(&ASInputs, &ASPreBuildInfo);
+		
+		ASPreBuildInfo.ResultDataMaxSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ResultDataMaxSizeInBytes);
+		ASPreBuildInfo.ScratchDataSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ScratchDataSizeInBytes);
 
-		{
-			ASPreBuildInfo.ResultDataMaxSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ResultDataMaxSizeInBytes);
-			ASPreBuildInfo.ScratchDataSizeInBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, ASPreBuildInfo.ScratchDataSizeInBytes);
+		// Create TLAS scratch buffer
+		D3D12BufferCreateInfo bufferInfo(ASPreBuildInfo.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		bufferInfo.alignment = std::max(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT);
+		Create_Buffer(bufferInfo, &dxr.TLAS.pScratch);
+		dxr.TLAS.pScratch->SetName(L"dxr.TLAS.pScratch");
 
-			// Create TLAS scratch buffer
-			D3D12BufferCreateInfo bufferInfo(ASPreBuildInfo.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-			bufferInfo.alignment = std::max(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT);
-			Create_Buffer(d3d, bufferInfo, &dxr.TLAS.pScratch);
+		// Create the TLAS buffer
+		bufferInfo.size = ASPreBuildInfo.ResultDataMaxSizeInBytes;
+		bufferInfo.state = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+		Create_Buffer(bufferInfo, &dxr.TLAS.pResult);
+		dxr.TLAS.pResult->SetName(L"dxr.TLAS.pResult");
 
-			// Create the TLAS buffer
-			bufferInfo.size = ASPreBuildInfo.ResultDataMaxSizeInBytes;
-			bufferInfo.state = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-			Create_Buffer(d3d, bufferInfo, &dxr.TLAS.pResult);
+		// Create the TLAS instance buffer
+		D3D12BufferCreateInfo instanceBufferInfo;
+		UINT64 instanceBufferBytes = ALIGN(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * meshCount);
 
-			// Create the TLAS instance buffer
-			D3D12BufferCreateInfo instanceBufferInfo;
-			instanceBufferInfo.size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * meshCount * 3;//that is this was TOO big?
-			instanceBufferInfo.heapType = D3D12_HEAP_TYPE_UPLOAD;
-			instanceBufferInfo.flags = D3D12_RESOURCE_FLAG_NONE;
-			instanceBufferInfo.state = D3D12_RESOURCE_STATE_GENERIC_READ;
+		instanceBufferInfo.size = instanceBufferBytes;
+		instanceBufferInfo.heapType = D3D12_HEAP_TYPE_UPLOAD;
+		instanceBufferInfo.flags = D3D12_RESOURCE_FLAG_NONE;
+		instanceBufferInfo.state = D3D12_RESOURCE_STATE_GENERIC_READ;
 
-			Create_Buffer(d3d, instanceBufferInfo, &dxr.TLAS.pInstanceDesc);
-		}
-
+		Create_Buffer(instanceBufferInfo, &dxr.TLAS.pInstanceDesc);
+		dxr.TLAS.pInstanceDesc->SetName(L"dxr.TLAS.pInstanceDesc");		
+		
 		// Copy the instance data to the buffer
 		UINT8* pData;
 		dxr.TLAS.pInstanceDesc->Map(0, nullptr, (void**)&pData);
 
-		for (int i = 0; i < meshCount; ++i)
-		{
-			// Describe the TLAS geometry instance(s)
-			D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
-			instanceDesc.InstanceID = i;											// This value will be exposed to the shader via InstanceID()    // This value is exposed to shaders as SV_InstanceID
-			instanceDesc.InstanceContributionToHitGroupIndex = 0;
-			instanceDesc.InstanceMask = 0;//Don't show!
-			memset(&instanceDesc.Transform, 0, sizeof(FLOAT) * 3 * 4);
-			instanceDesc.Transform[0][0] = instanceDesc.Transform[1][1] = instanceDesc.Transform[2][2] = 1;		// identity transform
-			instanceDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-			instanceDesc.AccelerationStructure = dxr.BLASs[0].pResult->GetGPUVirtualAddress(); //Just use first mesh (0), got to be a better way
-
-			memcpy(pData, &instanceDesc, sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
-			pData += sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
-		}
+		memset(pData, 0, instanceBufferBytes);
 		dxr.TLAS.pInstanceDesc->Unmap(0, nullptr);
-
+		
 		// Describe and build the TLAS
 		ASInputs.InstanceDescs = dxr.TLAS.pInstanceDesc->GetGPUVirtualAddress();
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
 		buildDesc.Inputs = ASInputs;
 		buildDesc.ScratchAccelerationStructureData = dxr.TLAS.pScratch->GetGPUVirtualAddress();
 		buildDesc.DestAccelerationStructureData = dxr.TLAS.pResult->GetGPUVirtualAddress();
-
+		
 		d3d.command_list->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
 
 		// Wait for the TLAS build to complete
@@ -483,20 +429,8 @@ namespace DXR
 			char buffer[512];
 			sprintf(buffer, "MAX_TOP_LEVEL_INSTANCE_COUNT hit!, meshCount %d\n", (int)meshCount);
 			OutputDebugStringA(buffer);
-
 			meshCount = MAX_TOP_LEVEL_INSTANCE_COUNT;
 		}
-
-		// Get the size requirements for the TLAS buffers
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS ASInputs = {};
-		ASInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-		ASInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-		ASInputs.NumDescs = MAX_TOP_LEVEL_INSTANCE_COUNT;
-		ASInputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
-
-		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO ASPreBuildInfo = {};
-		d3d.device->GetRaytracingAccelerationStructurePrebuildInfo(&ASInputs, &ASPreBuildInfo);
-
 		{
 			// If this a request for an update, then the TLAS was already used in a DispatchRay() call. We need a UAV barrier to make sure the read operation ends before updating the buffer
 			D3D12_RESOURCE_BARRIER uavBarrier = {};
@@ -504,11 +438,11 @@ namespace DXR
 			uavBarrier.UAV.pResource = dxr.TLAS.pResult;
 			d3d.command_list->ResourceBarrier(1, &uavBarrier);
 		}
-
+		
 		const int* instanceData = drxAsm.GetInstanceData();
 		std::vector<dxr_acceleration_structure_manager::InstancesTransform>& instanceDataTransform = drxAsm.GetInstanceTransformData();
 
-		// Copy the instance data to the buffer
+		// Copy the instance data to the buffer		
 		UINT8* pData;
 		dxr.TLAS.pInstanceDesc->Map(0, nullptr, (void**)&pData);
 
@@ -520,36 +454,31 @@ namespace DXR
 			// Describe the TLAS geometry instance(s)
 			D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
 			instanceDesc.InstanceID = bottomLevelIndex;											// This value will be exposed to the shader via InstanceID()    // This value is exposed to shaders as SV_InstanceID
-			instanceDesc.InstanceContributionToHitGroupIndex = bottomLevelIndex;
+			instanceDesc.InstanceContributionToHitGroupIndex = bottomLevelIndex;		//Index of the hit group invoked upon intersection
 			instanceDesc.InstanceMask = 0xFF;
 
 			Com_Memcpy(instanceDesc.Transform, transfrom.data, sizeof(FLOAT) * 3 * 4);
 
-			instanceDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+			instanceDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;			
 			instanceDesc.AccelerationStructure = dxr.BLASs[bottomLevelIndex].pResult->GetGPUVirtualAddress();
 
 			memcpy(pData, &instanceDesc, sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
 			pData += sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
-		}
+		}		
+		
+		dxr.TLAS.pInstanceDesc->Unmap(0, nullptr);	
 
-		for (size_t i = meshCount; i < MAX_TOP_LEVEL_INSTANCE_COUNT; ++i)
-		{
-			D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
-			instanceDesc.InstanceMask = 0;
-			instanceDesc.InstanceContributionToHitGroupIndex = 0;
-			memcpy(pData, &instanceDesc, sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
-			pData += sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
-		}
-
-		dxr.TLAS.pInstanceDesc->Unmap(0, nullptr);
-
-		// Describe and UPDATE the TLAS
-		ASInputs.InstanceDescs = dxr.TLAS.pInstanceDesc->GetGPUVirtualAddress();
+		// Describe and UPDATE the TLAS		
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
-		buildDesc.Inputs = ASInputs;
-		buildDesc.ScratchAccelerationStructureData = dxr.TLAS.pScratch->GetGPUVirtualAddress();
-		buildDesc.DestAccelerationStructureData = dxr.TLAS.pResult->GetGPUVirtualAddress();
-		buildDesc.Inputs.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+		buildDesc.Inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+		buildDesc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+		buildDesc.Inputs.InstanceDescs = dxr.TLAS.pInstanceDesc->GetGPUVirtualAddress();
+		buildDesc.Inputs.NumDescs = (UINT)meshCount;
+		//buildDesc.Inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+		buildDesc.Inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;//TODO look into why I can't just do an update? maybe its only if transforms have changed?
+
+		buildDesc.DestAccelerationStructureData = dxr.TLAS.pResult->GetGPUVirtualAddress(); 
+		buildDesc.ScratchAccelerationStructureData = dxr.TLAS.pScratch->GetGPUVirtualAddress();				
 		buildDesc.SourceAccelerationStructureData = dxr.TLAS.pResult->GetGPUVirtualAddress();
 
 		d3d.command_list->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
@@ -559,7 +488,7 @@ namespace DXR
 		uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
 		uavBarrier.UAV.pResource = dxr.TLAS.pResult;
 		uavBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		d3d.command_list->ResourceBarrier(1, &uavBarrier);
+		d3d.command_list->ResourceBarrier(1, &uavBarrier);		
 	}
 
 	void UpdateAccelerationStructures(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
@@ -590,12 +519,13 @@ namespace DXR
 		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
 		ranges[0].OffsetInDescriptorsFromTableStart = 0;
 
-		ranges[1].BaseShaderRegister = 0;
+		ranges[1].BaseShaderRegister = 0;//RTOutput?
 		ranges[1].NumDescriptors = 1;
 		ranges[1].RegisterSpace = 0;
 		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
 		ranges[1].OffsetInDescriptorsFromTableStart = 2;
 
+		//SceneBVH, indices, vertices, albedoTex, normalTex...
 		ranges[2].BaseShaderRegister = 0; //register(t0);
 		ranges[2].NumDescriptors = 10;
 		ranges[2].RegisterSpace = 0; //register(t0,space0)
@@ -644,17 +574,29 @@ namespace DXR
 		D3DShaders::Compile_Shader(shaderCompiler, dxr.hit.chs);
 
 		D3D12_ROOT_PARAMETER param0 = {};
-
+		// indexOffSet & vertexOffSet
 		param0.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 		param0.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 		param0.Constants.Num32BitValues = 4;
 		param0.Constants.ShaderRegister = 0;
 		param0.Constants.RegisterSpace = 3;
+		
+		//texture
+		D3D12_DESCRIPTOR_RANGE ranges2[1];
+		ranges2[0].BaseShaderRegister = 0; //register(t0);
+		ranges2[0].NumDescriptors = 1;
+		ranges2[0].RegisterSpace = 3; //register(t1,space0)
+		ranges2[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		ranges2[0].OffsetInDescriptorsFromTableStart = 4;
 
-		// Describe the ray generation root signature
-		D3D12_DESCRIPTOR_RANGE ranges[1];
+		D3D12_ROOT_PARAMETER param2 = {};
+		param2.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		param2.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+		param2.DescriptorTable.NumDescriptorRanges = _countof(ranges2);
+		param2.DescriptorTable.pDescriptorRanges = ranges2;
 
 		//vertex & index buffers
+		D3D12_DESCRIPTOR_RANGE ranges[1];
 		ranges[0].BaseShaderRegister = 1; //register(t0);
 		ranges[0].NumDescriptors = 2;
 		ranges[0].RegisterSpace = 0; //register(t1,space0)
@@ -665,9 +607,10 @@ namespace DXR
 		param1.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 		param1.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 		param1.DescriptorTable.NumDescriptorRanges = _countof(ranges);
-		param1.DescriptorTable.pDescriptorRanges = ranges;
-
-		D3D12_ROOT_PARAMETER rootParams[2] = { param0, param1 };
+		param1.DescriptorTable.pDescriptorRanges = ranges;		
+		
+		
+		D3D12_ROOT_PARAMETER rootParams[3] = { param0, param2, param1 };
 
 		D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
 		rootDesc.NumParameters = _countof(rootParams);
@@ -763,7 +706,7 @@ namespace DXR
 		{
 			// Add a state subobject for the shader payload configuration
 			D3D12_RAYTRACING_SHADER_CONFIG shaderDesc = {};
-			shaderDesc.MaxPayloadSizeInBytes = sizeof(float) * 8;	// RGB and HitT
+			shaderDesc.MaxPayloadSizeInBytes = sizeof(float) * 12;	// RGB and HitT and Color
 			shaderDesc.MaxAttributeSizeInBytes = D3D12_RAYTRACING_MAX_ATTRIBUTE_SIZE_IN_BYTES;
 
 			D3D12_STATE_SUBOBJECT shaderConfigObject = {};
@@ -915,30 +858,38 @@ namespace DXR
 
 		dxr_acceleration_structure_manager& drxAsm = d3d.dxr->acceleration_structure_manager;
 
-		//int bottomLevelMeshCount = drxAsm.MeshCount();
 		int bottomLevelMeshCount = MAX_BOTTOM_LEVEL_MESH_COUNT; //not sure why i can't use MeshCount, makes me think i have an aligment error
-
-		uint32_t sbtSize = 0;
 
 		dxr.sbtEntrySize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 		dxr.sbtEntrySize += 8;					// CBV/SRV/UAV descriptor table  or indexOffSet & vertexOffSet
-		dxr.sbtEntrySize += 8;//padab & padab
+		dxr.sbtEntrySize += 8;//texWidth & texHeight
+		dxr.sbtEntrySize += 8;//textureAlbedo
 		dxr.sbtEntrySize = ALIGN(D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT, dxr.sbtEntrySize);
 
-		sbtSize = (dxr.sbtEntrySize * (3 + bottomLevelMeshCount));		// (3)!! shader records in the table
+		uint32_t sbtSize = (dxr.sbtEntrySize * (3 + bottomLevelMeshCount));		// (3)!! shader records in the table
 		sbtSize = ALIGN(D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT, sbtSize);
 
 		// Create the shader table buffers
 		D3D12BufferCreateInfo bufferInfo(sbtSize, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
-		Create_Buffer(d3d, bufferInfo, &dxr.sbt);
+		Create_Buffer(bufferInfo, &dxr.sbt);
 	}
 
 	void Update_Shader_Table(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
+		dxr_heapManager* heapManager = d3d.dxr->dxr_heapManager;
 		dxr_acceleration_structure_manager& drxAsm = d3d.dxr->acceleration_structure_manager;
+		auto& model = drxAsm.GetModel();
 
-		//int bottomLevelMeshCount = drxAsm.MeshCount();
-		int bottomLevelMeshCount = MAX_BOTTOM_LEVEL_MESH_COUNT; //not sure why i can't use MeshCount, makes me think i have an aligment error
+		int bottomLevelMeshCount = drxAsm.MeshCount();
+
+		if (bottomLevelMeshCount > MAX_BOTTOM_LEVEL_MESH_COUNT)
+		{
+			char buffer[512];
+			sprintf(buffer, "MAX_BOTTOM_LEVEL_MESH_COUNT hit!, bottomLevelMeshCount %d\n", bottomLevelMeshCount);
+			OutputDebugStringA(buffer);
+			bottomLevelMeshCount = MAX_BOTTOM_LEVEL_MESH_COUNT;
+		}
+		//int bottomLevelMeshCount = MAX_BOTTOM_LEVEL_MESH_COUNT; //not sure why i can't use MeshCount, makes me think i have an aligment error
 
 		// Map the buffer
 		uint8_t* pData;
@@ -953,12 +904,11 @@ namespace DXR
 		memcpy(pData, dxr.rtpsoInfo->GetShaderIdentifier(L"RayGen_12"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 
 		// Set the root arguments data. Point to start of descriptor heap
-		*reinterpret_cast<D3D12_GPU_DESCRIPTOR_HANDLE*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = d3d.cbvSrvUavRayGenHeaps->GetGPUDescriptorHandleForHeapStart();
+		*reinterpret_cast<D3D12_GPU_DESCRIPTOR_HANDLE*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = heapManager->GetHeap()->GetGPUDescriptorHandleForHeapStart();
 
 		// Entry 1 - Miss program (no local root arguments to set)
 		pData += dxr.sbtEntrySize;
 		memcpy(pData, dxr.rtpsoInfo->GetShaderIdentifier(L"Miss_5"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-
 
 		for (int i = 0; i < bottomLevelMeshCount; ++i)
 		{
@@ -966,205 +916,23 @@ namespace DXR
 			pData += dxr.sbtEntrySize;
 			memcpy(pData, dxr.rtpsoInfo->GetShaderIdentifier(L"HitGroup"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 
-			UINT indexStart = drxAsm.MeshStartIndexIndex(i);
-			UINT vertexStart = drxAsm.MeshStartVertexIndex(i);
+			UINT indexStart = model.GetIndexBufferMegaPos(i);
+			UINT vertexStart = model.GetVertexBufferMegaPos(i);
+			int surfaceIndex, width, height;
+			model.GetSurfaceIndex(i, surfaceIndex, width, height);
+
 			*reinterpret_cast<UINT32*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 0) = indexStart;
 			*reinterpret_cast<UINT32*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 4) = vertexStart;
-			*reinterpret_cast<UINT32*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8) = 0;
-			*reinterpret_cast<UINT32*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 12) = 0;
+			*reinterpret_cast<UINT32*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8) = width;
+			*reinterpret_cast<UINT32*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 12) = height;
+
+			D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = heapManager->GetGameSrvHandle(surfaceIndex);
+			*reinterpret_cast<D3D12_GPU_DESCRIPTOR_HANDLE*>(pData + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 16) = gpuHandle;
 		}
 
 		// Unmap
 		dxr.sbt->Unmap(0, nullptr);
 	}
-
-	void Create_CBVSRVUAV_Heap(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
-	{
-		// Describe the CBV/SRV/UAV heap
-		// Need 7 entries:
-		// 1 CBV for the ViewCB
-		// 1 CBV for the MaterialCB
-		// 1 UAV for the RT output
-		// 1 SRV for the Scene BVH
-
-		// 1 SRV for the index buffer
-		// 1 SRV for the vertex buffer
-		// 1 SRV for the texture
-		// 1 SRV for the texture
-		// 1 SRV for the texture
-		// 1 SRV for the depth texture
-		// 1 SRV for the last depth texture
-
-		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.NumDescriptors = 13;
-		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-
-		// Create the descriptor heap
-		HRESULT hr = d3d.device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&d3d.cbvSrvUavRayGenHeaps));
-		if (FAILED(hr))
-		{
-			ri.Error(ERR_FATAL, "Error: failed to create DXR CBV/SRV/UAV descriptor heap!");
-		}
-#if defined(_DEBUG)
-		d3d.cbvSrvUavRayGenHeaps->SetName(L"cbvSrvUavRayGenHeaps");
-#endif
-
-		// Get the descriptor heap handle and increment size
-		D3D12_CPU_DESCRIPTOR_HANDLE handle = d3d.cbvSrvUavRayGenHeaps->GetCPUDescriptorHandleForHeapStart();
-		UINT handleIncrement = d3d.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-		// Create the ViewCB CBV
-		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-		cbvDesc.SizeInBytes = ALIGN(D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, sizeof(*world.viewCBData));
-		cbvDesc.BufferLocation = world.viewCB->GetGPUVirtualAddress();
-
-		d3d.device->CreateConstantBufferView(&cbvDesc, handle);
-
-		// Create the MaterialCB CBV
-		cbvDesc.SizeInBytes = ALIGN(D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, sizeof(*world.materialCBData));
-		cbvDesc.BufferLocation = world.materialCB->GetGPUVirtualAddress();
-
-		handle.ptr += handleIncrement;
-		d3d.device->CreateConstantBufferView(&cbvDesc, handle);
-
-		// Create the DXR output buffer UAV
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-
-		handle.ptr += handleIncrement;
-		d3d.device->CreateUnorderedAccessView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::RAY_OUTPUT_RT), nullptr, &uavDesc, handle);
-
-		// Create the DXR Top Level Acceleration Structure SRV
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
-		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.RaytracingAccelerationStructure.Location = dxr.TLAS.pResult->GetGPUVirtualAddress();
-
-		handle.ptr += handleIncrement;
-		d3d.device->CreateShaderResourceView(nullptr, &srvDesc, handle);
-
-		// Create the index buffer SRV
-		D3D12_SHADER_RESOURCE_VIEW_DESC indexSRVDesc;
-		indexSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-		indexSRVDesc.Format = DXGI_FORMAT_R32_TYPELESS;
-		indexSRVDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
-		indexSRVDesc.Buffer.StructureByteStride = 0;
-		indexSRVDesc.Buffer.FirstElement = 0;
-
-		UINT64 indexBuferByts = MEGA_INDEX_VERTEX_BUFFER_SIZE;
-		indexSRVDesc.Buffer.NumElements = indexBuferByts / sizeof(float);
-
-		indexSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-
-		handle.ptr += handleIncrement;
-		d3d.device->CreateShaderResourceView(d3d.resources->indexBufferMega, &indexSRVDesc, handle);
-
-		// Create the vertex buffer SRV
-		D3D12_SHADER_RESOURCE_VIEW_DESC vertexSRVDesc;
-		vertexSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-		vertexSRVDesc.Format = DXGI_FORMAT_R32_TYPELESS;
-		vertexSRVDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
-		vertexSRVDesc.Buffer.StructureByteStride = 0;
-		vertexSRVDesc.Buffer.FirstElement = 0;
-
-		UINT64 vertexBuferByts = MEGA_INDEX_VERTEX_BUFFER_SIZE;
-		vertexSRVDesc.Buffer.NumElements = vertexBuferByts / sizeof(float);
-		vertexSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-
-		handle.ptr += handleIncrement;
-		d3d.device->CreateShaderResourceView(d3d.resources->vertexBufferMega, &vertexSRVDesc, handle);
-
-		// Create the material texture SRV
-		{
-			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-			textureSRVDesc.Texture2D.MipLevels = 1;
-			textureSRVDesc.Texture2D.MostDetailedMip = 0;
-			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-
-			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_ALBEDO_RT), &textureSRVDesc, handle);
-		}
-
-		// Create the material texture SRV
-		{
-			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-			textureSRVDesc.Texture2D.MipLevels = 1;
-			textureSRVDesc.Texture2D.MostDetailedMip = 0;
-			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-
-			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_NORMALS_RT), &textureSRVDesc, handle);
-		}
-		// Create the material texture SRV
-		{
-			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
-			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-			textureSRVDesc.Texture2D.MipLevels = 1;
-			textureSRVDesc.Texture2D.MostDetailedMip = 0;
-			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-
-			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::G_BUFFER_VELOCITY_RT), &textureSRVDesc, handle);
-		}
-
-		// Create the material texture SRV
-		{
-			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-			textureSRVDesc.Texture2D.MipLevels = 1;
-			textureSRVDesc.Texture2D.MostDetailedMip = 0;
-			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-
-			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetRenderTargetTexture(dx_renderTargets::POST_LAST_FRAME_LIGHT_RT), &textureSRVDesc, handle);
-		}
-
-		// Create the material depth SRV
-		{
-			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R32_FLOAT;
-			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-			textureSRVDesc.Texture2D.MipLevels = 1;
-			textureSRVDesc.Texture2D.MostDetailedMip = 0;
-			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetDepthStencilBuffer(dx_renderTargets::G_BUFFER_DEPTH_RT), &textureSRVDesc, handle);
-		}
-
-		// Create the material last depth SRV
-		{
-			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R32_FLOAT;
-			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-			textureSRVDesc.Texture2D.MipLevels = 1;
-			textureSRVDesc.Texture2D.MostDetailedMip = 0;
-			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(d3d.dx_renderTargets->GetDepthStencilBuffer(dx_renderTargets::G_BUFFER_LAST_DEPTH_RT), &textureSRVDesc, handle);
-		}
-
-		{
-			D3D12_SHADER_RESOURCE_VIEW_DESC textureSRVDesc = {};
-			textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			textureSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
-			textureSRVDesc.Texture2DArray.MipLevels = 1;
-			textureSRVDesc.Texture2DArray.MostDetailedMip = 0;
-			textureSRVDesc.Texture2DArray.FirstArraySlice = 0;
-			textureSRVDesc.Texture2DArray.ArraySize = 64;
-			textureSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-			handle.ptr += handleIncrement;
-			d3d.device->CreateShaderResourceView(dx.dx_renderTargets->mNoiseImage.texture, &textureSRVDesc, handle);
-		}
-	}
-
 	void Build_Command_List(Dx_Instance &d3d, DXRGlobal &dxr, Dx_World &world)
 	{
 		Update_View_CB(d3d, dxr, world);
@@ -1175,9 +943,10 @@ namespace DXR
 		d3d.command_list->SetComputeRootSignature(dxr.globalSignature);
 
 		// Set the UAV/SRV/CBV and sampler heaps
-		ID3D12DescriptorHeap* ppHeaps[] = { d3d.cbvSrvUavRayGenHeaps };
+		dxr_heapManager* heapManager = d3d.dxr->dxr_heapManager;
+		ID3D12DescriptorHeap* ppHeaps[] = { heapManager->GetHeap() };
 		UINT ppHeapsCount = _countof(ppHeaps);
-		d3d.command_list->SetDescriptorHeaps(ppHeapsCount, ppHeaps);
+		d3d.command_list->SetDescriptorHeaps(ppHeapsCount, ppHeaps);		
 
 		DXR::Update_Shader_Table(d3d, *d3d.dxr, world);
 
